@@ -31,8 +31,14 @@ public final class JSONWriter {
                 .stream(beanInfo.getPropertyDescriptors())
                 .filter(prop -> !prop.getName().equals("class"))
                 .<Generator>map(prop -> {
-                  var key = "\"" + prop.getName() + "\": ";
                   var readMethod = prop.getReadMethod();
+                  var annotation = readMethod.getAnnotation(JSONProperty.class);
+                  var keyPrefix = "\"";
+                  var keySuffix = "\": ";
+                  var propertyName = annotation == null
+                          ? prop.getName()
+                          : annotation.value();
+                  var key = keyPrefix + propertyName + keySuffix;
                   return (writer, o) -> key + writer.toJSON(Utils.invokeMethod(o, readMethod));
                 })
                 .toList();
