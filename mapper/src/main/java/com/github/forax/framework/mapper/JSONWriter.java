@@ -1,7 +1,7 @@
 package com.github.forax.framework.mapper;
 
-import java.beans.PropertyDescriptor;
 import java.util.Arrays;
+import java.util.List;
 import java.util.stream.Collectors;
 
 public final class JSONWriter {
@@ -18,20 +18,32 @@ public final class JSONWriter {
 
   }
 
-  private static final ClassValue<PropertyDescriptor[]> CACHE = new ClassValue<PropertyDescriptor[]>() {
-    @Override
-    protected PropertyDescriptor[] computeValue(Class<?> type) {
-      var beanInfo = Utils.beanInfo(type);
-      return beanInfo.getPropertyDescriptors();
-    }
+  @FunctionalInterface
+  private interface Generator {
+    String generate(JSONWriter writer, Object bean);
+  }
+
+  private static final ClassValue<List<Generator>> CACHE = new ClassValue<>() {
+      @Override
+      protected List<Generator> computeValue(Class<?> type) {
+        var beanInfo = Utils.beanInfo(type);
+        return Arrays
+                .stream(beanInfo.getPropertyDescriptors())
+                .filter(prop -> !prop.getName().equals("class"))
+                .<Generator>map(prop -> {
+                  var key = "\"" + prop.getName() + "\": ";
+                  var readMethod = prop.getReadMethod();
+                  return (writer, o) -> key + writer.toJSON(Utils.invokeMethod(o, readMethod));
+                })
+                .toList();
+      }
   };
 
   private String toJSONBean(Object o) {
-    return Arrays
-            .stream(CACHE.get((o.getClass())))
-            .filter(prop -> !prop.getName().equals("class"))
-            .map(prop -> toJSON(prop.getName()) + ": " + toJSON(Utils.invokeMethod(o, prop.getReadMethod())))
+    return CACHE
+            .get((o.getClass()))
+            .stream()
+            .map(generator -> generator.generate(this, o))
             .collect(Collectors.joining(", ", "{", "}" ));
-
   }
 }
