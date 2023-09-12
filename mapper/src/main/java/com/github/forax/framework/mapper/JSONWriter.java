@@ -1,5 +1,6 @@
 package com.github.forax.framework.mapper;
 
+import java.beans.PropertyDescriptor;
 import java.util.Arrays;
 import java.util.stream.Collectors;
 
@@ -17,10 +18,17 @@ public final class JSONWriter {
 
   }
 
+  private static final ClassValue<PropertyDescriptor[]> CACHE = new ClassValue<PropertyDescriptor[]>() {
+    @Override
+    protected PropertyDescriptor[] computeValue(Class<?> type) {
+      var beanInfo = Utils.beanInfo(type);
+      return beanInfo.getPropertyDescriptors();
+    }
+  };
+
   private String toJSONBean(Object o) {
-    var beanInfo = Utils.beanInfo(o.getClass());
     return Arrays
-            .stream(beanInfo.getPropertyDescriptors())
+            .stream(CACHE.get((o.getClass())))
             .filter(prop -> !prop.getName().equals("class"))
             .map(prop -> toJSON(prop.getName()) + ": " + toJSON(Utils.invokeMethod(o, prop.getReadMethod())))
             .collect(Collectors.joining(", ", "{", "}" ));
