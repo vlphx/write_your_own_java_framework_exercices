@@ -1,4 +1,6 @@
 # Write your own java framework
+Hello
+
 Understand how Spring, JakartaEE, Jackson, Guice and Hibernate works by rewriting a toy version of them
 
 [Tips and Tricks used in the implementations](COMPANION.md)
