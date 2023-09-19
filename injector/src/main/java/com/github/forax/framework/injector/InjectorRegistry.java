@@ -1,9 +1,13 @@
 package com.github.forax.framework.injector;
 
-import javax.swing.text.html.Option;
+// import javax.swing.text.html.Option;
 import java.beans.PropertyDescriptor;
 import java.lang.reflect.Constructor;
-import java.util.*;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.function.Supplier;
 
 public final class InjectorRegistry {
@@ -44,6 +48,18 @@ public final class InjectorRegistry {
                 .toList();
     }
 
+    private Optional<Constructor<?>> findInjectableConstructor(Class<?> type){
+        var constructors = Arrays
+                .stream(type.getConstructors())
+                .filter(constructor -> constructor.isAnnotationPresent(Inject.class))
+                .toList();
+        return switch (constructors.size()) {
+            case 0 -> Optional.empty();
+            case 1 -> Optional.of(constructors.get(0));
+            default -> throw new IllegalStateException("Too many injectable constructors !!");
+        };
+    }
+
     public <T> void registerProviderClass(Class<T> type, Class<? extends T> providerClass){
         Objects.requireNonNull(type);
         Objects.requireNonNull(providerClass);
@@ -65,15 +81,12 @@ public final class InjectorRegistry {
         });
     }
 
-    private Optional<Constructor<?>> findInjectableConstructor(Class<?> type){
-        var constructors = Arrays
-                .stream(type.getConstructors())
-                        .filter(constructor -> constructor.isAnnotationPresent(Inject.class))
-                        .toList();
-        return switch (constructors.size()) {
-            case 0 -> Optional.empty();
-            case 1 -> Optional.of(constructors.get(0));
-                default -> throw new IllegalStateException("Too many injectable constructors !!");
-        };
+    public void registerProviderClass(Class<?> providerClass){
+        Objects.requireNonNull(providerClass);
+        registerProviderClassImplement(providerClass);
+    }
+
+    private <T> void registerProviderClassImplement(Class<T> providerClass){
+        registerProviderClass(providerClass, providerClass);
     }
 }
