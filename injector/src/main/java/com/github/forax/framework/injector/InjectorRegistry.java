@@ -6,7 +6,7 @@ import java.util.Objects;
 
 public final class InjectorRegistry {
     private final HashMap<Class<?>, Object> instanceByClassMap = new HashMap<>();
-  public void registerInstance(Class<?> type, Object instance){
+  public <T> void registerInstance(Class<T> type, Object instance){
       Objects.requireNonNull(type);
       Objects.requireNonNull(instance);
       var doesExist = instanceByClassMap.putIfAbsent(type, instance);
@@ -15,9 +15,10 @@ public final class InjectorRegistry {
       }
   }
 
-  public Object lookupInstance(Class<?> type){
+  public <T> T lookupInstance(Class<T> type){
       Objects.requireNonNull(type);
-      return  instanceByClassMap.getOrDefault(type, new IllegalStateException("instance of " + type +" does not exist: "));
+      var instance =  instanceByClassMap.getOrDefault(type, new IllegalStateException("instance of " + type +" does not exist: "));
+      return type.cast(instance);
       /*
       var instance = instanceByClassMap.get(type);
       if (instance == null){

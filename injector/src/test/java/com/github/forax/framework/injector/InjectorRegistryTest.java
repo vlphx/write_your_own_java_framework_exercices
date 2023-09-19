@@ -95,7 +95,7 @@ public class InjectorRegistryTest {
       assertThrows(NullPointerException.class, () -> registry.lookupInstance(null));
     }
   }
-  /*
+
   @Nested
   public class Q2 {
     @Test @Tag("Q2")
@@ -112,7 +112,7 @@ public class InjectorRegistryTest {
     //}
   }
 
-
+  /*
   @Nested
   public class Q3 {
     @Test @Tag("Q3")
