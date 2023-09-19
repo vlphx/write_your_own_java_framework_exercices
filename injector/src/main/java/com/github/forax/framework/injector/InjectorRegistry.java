@@ -1,24 +1,22 @@
 package com.github.forax.framework.injector;
 
 import java.util.HashMap;
-import java.util.Map;
 import java.util.Objects;
+import java.util.function.Supplier;
 
 public final class InjectorRegistry {
-    private final HashMap<Class<?>, Object> instanceByClassMap = new HashMap<>();
+    private final HashMap<Class<?>, Supplier<?>> registry = new HashMap<>();
   public <T> void registerInstance(Class<T> type, T instance){
       Objects.requireNonNull(type);
       Objects.requireNonNull(instance);
-      var doesExist = instanceByClassMap.putIfAbsent(type, instance);
-      if (doesExist != null){
-          throw new IllegalStateException("already registered for " + type.getName());
-      }
+      registerProvider(type, () -> instance);
   }
 
   public <T> T lookupInstance(Class<T> type){
       Objects.requireNonNull(type);
-      var instance =  instanceByClassMap.getOrDefault(type, new IllegalStateException("instance of " + type +" does not exist: "));
-      return type.cast(instance);
+      var supplier =  registry
+              .getOrDefault(type, () -> new IllegalStateException("instance of " + type +" does not exist: "));
+      return type.cast(supplier.get());
       /*
       var instance = instanceByClassMap.get(type);
       if (instance == null){
@@ -28,5 +26,12 @@ public final class InjectorRegistry {
       */
   }
 
-
+  public <T> void registerProvider(Class<T> type, Supplier<T> supplier){
+    Objects.requireNonNull(type);
+    Objects.requireNonNull(supplier);
+      var doesExist = registry.putIfAbsent(type, supplier);
+      if (doesExist != null){
+          throw new IllegalStateException("already registered for " + type.getName());
+      }
+  }
 }
