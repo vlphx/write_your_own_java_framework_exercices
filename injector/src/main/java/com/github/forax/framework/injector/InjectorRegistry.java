@@ -1,16 +1,17 @@
 package com.github.forax.framework.injector;
 
-import java.util.HashMap;
-import java.util.Objects;
+import java.beans.PropertyDescriptor;
+import java.util.*;
 import java.util.function.Supplier;
 
 public final class InjectorRegistry {
     private final HashMap<Class<?>, Supplier<?>> registry = new HashMap<>();
-  public <T> void registerInstance(Class<T> type, T instance){
+
+    public <T> void registerInstance(Class<T> type, T instance){
       Objects.requireNonNull(type);
       Objects.requireNonNull(instance);
       registerProvider(type, () -> instance);
-  }
+    }
 
   public <T> T lookupInstance(Class<T> type){
       Objects.requireNonNull(type);
@@ -34,4 +35,16 @@ public final class InjectorRegistry {
           throw new IllegalStateException("already registered for " + type.getName());
       }
   }
+
+  static List<PropertyDescriptor> findInjectableProperties(Class<?> type) {
+        var beanInfoOfType = Utils.beanInfo(type);
+      return  Arrays
+              .stream(beanInfoOfType.getPropertyDescriptors())
+              .filter(prop -> {
+                  var setter = prop.getWriteMethod();
+                  return setter != null && setter.isAnnotationPresent(Inject.class);
+              })
+              .toList();
+    }
+  
 }
