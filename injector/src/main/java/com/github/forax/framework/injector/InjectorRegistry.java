@@ -16,7 +16,9 @@ public final class InjectorRegistry {
   public <T> T lookupInstance(Class<T> type){
       Objects.requireNonNull(type);
       var supplier =  registry
-              .getOrDefault(type, () -> new IllegalStateException("instance of " + type +" does not exist: "));
+              .getOrDefault(type, () -> {
+                  throw new IllegalStateException("instance of " + type + " does not exist: ");
+              });
       return type.cast(supplier.get());
       /*
       var instance = instanceByClassMap.get(type);
@@ -46,5 +48,20 @@ public final class InjectorRegistry {
               })
               .toList();
     }
-  
+
+    public <T> void registerProviderClass(Class<T> type, Class<? extends T> providerClass){
+        Objects.requireNonNull(type);
+        Objects.requireNonNull(providerClass);
+        var constructor = Utils.defaultConstructor(providerClass);
+        var injectableProperties = findInjectableProperties(providerClass);
+        registerProvider(type, () -> {
+            var instance = Utils.newInstance(constructor);
+            for (var injectableProperty : injectableProperties) {
+                var value = lookupInstance(injectableProperty.getPropertyType());
+                var setter = injectableProperty.getWriteMethod();
+                Utils.invokeMethod(instance, setter, value);
+            }
+            return instance;
+        });
+    }
 }
