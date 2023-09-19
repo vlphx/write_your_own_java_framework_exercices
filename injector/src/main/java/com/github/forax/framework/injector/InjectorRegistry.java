@@ -6,7 +6,7 @@ import java.util.Objects;
 
 public final class InjectorRegistry {
     private final HashMap<Class<?>, Object> instanceByClassMap = new HashMap<>();
-  public <T> void registerInstance(Class<T> type, Object instance){
+  public <T> void registerInstance(Class<T> type, T instance){
       Objects.requireNonNull(type);
       Objects.requireNonNull(instance);
       var doesExist = instanceByClassMap.putIfAbsent(type, instance);
@@ -26,6 +26,7 @@ public final class InjectorRegistry {
       }
       return instance;
       */
-
   }
+
+
 }
