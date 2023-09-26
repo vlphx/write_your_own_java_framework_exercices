@@ -13,6 +13,8 @@ public final class InterceptorRegistry {
     // private final HashMap<Class<? extends Annotation>, List<AroundAdvice>> aroundAdvicesByAnnotationMap = new HashMap<>();
     private final HashMap<Class<? extends Annotation>, List<Interceptor>> interceptorsByAnnotationMap = new HashMap<>();
 
+    private final HashMap<Method, Invocation> invocationByMethodMap = new HashMap<>();
+
 //    List<AroundAdvice> findAdvices(Method method) {
 //        Objects.requireNonNull(method);
 //        return Arrays
@@ -58,17 +60,19 @@ public final class InterceptorRegistry {
 //                            advice.after(instance, method, args, result);
 //                        }
 //                    }
-                    var interceptors = findInterceptors(method);
-                    var invocation = getInvocation(interceptors);
+                    var invocation = computeInvocation(method);
                     return invocation.proceed(instance, method, args);
                 })
         );
     }
 
+
     public void addInterceptor(Class<? extends Annotation> annotationClass, Interceptor interceptor){
         Objects.requireNonNull(annotationClass);
         Objects.requireNonNull(interceptor);
         interceptorsByAnnotationMap.computeIfAbsent(annotationClass, __ -> new ArrayList<>()).add(interceptor);
+        invocationByMethodMap.clear(); // invalidate cache so that computeInvocation recalculates and takes into account the new interceptor where needed
+        // we see that caching is not that effective as it recalculates everything after this...
     }
 
     List<Interceptor> findInterceptors(Method method){
@@ -81,10 +85,14 @@ public final class InterceptorRegistry {
 
     static Invocation getInvocation(List<Interceptor> interceptors){
         Invocation invocation = Utils::invokeMethod;
-        for (var interceptor: interceptors){
+        for (var interceptor: interceptors.reversed()){
             Invocation previousInvocation = invocation;
             invocation = (instance, method, args) -> interceptor.intercept(instance, method, args, previousInvocation);
         }
         return invocation;
+    }
+    Invocation computeInvocation(Method method){
+        Objects.requireNonNull(method);
+        return invocationByMethodMap.computeIfAbsent(method, __ -> getInvocation(findInterceptors(method)));
     }
 }
