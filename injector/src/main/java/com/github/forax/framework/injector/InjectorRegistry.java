@@ -77,7 +77,7 @@ public final class InjectorRegistry {
                 var setter = injectableProperty.getWriteMethod();
                 Utils.invokeMethod(instance, setter, value);
             }
-            return providerClass.cast(instance);
+            return type.cast(instance);
         });
     }
 
