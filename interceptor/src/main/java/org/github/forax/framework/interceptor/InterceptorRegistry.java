@@ -3,16 +3,13 @@ package org.github.forax.framework.interceptor;
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
-import java.security.PublicKey;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Objects;
-import java.util.stream.Stream;
 
 public final class InterceptorRegistry {
-    private AroundAdvice advice;
     private final HashMap<Class<? extends Annotation>, List<AroundAdvice>> aroundAdvicesByAnnotationMap = new HashMap<>();
     private final HashMap<Class<? extends Annotation>, List<Interceptor>> interceptorsByAnnotationMap = new HashMap<>();
 
@@ -63,5 +60,14 @@ public final class InterceptorRegistry {
                 .stream(method.getAnnotations())
                 .flatMap(annotation -> interceptorsByAnnotationMap.getOrDefault(annotation.annotationType(), List.of()).stream())
                 .toList();
+    }
+
+    static Invocation getInvocation(List<Interceptor> interceptors){
+        Invocation invocation = Utils::invokeMethod;
+        for (var interceptor: interceptors){
+            Invocation previousInvocation = invocation;
+            invocation = (instance, method, args) -> interceptor.intercept(instance, method, args, previousInvocation);
+        }
+        return invocation;
     }
 }
