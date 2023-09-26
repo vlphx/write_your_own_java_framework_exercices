@@ -559,7 +559,7 @@ public class InterceptorRegistryTest {
     }
   }  // end of Q6
 
-/*
+
   @Nested
   public class Q7 {
 
@@ -605,5 +605,4 @@ public class InterceptorRegistryTest {
     }
   }  // end Q7
 
-  */
 }

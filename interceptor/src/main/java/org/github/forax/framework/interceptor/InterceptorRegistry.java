@@ -8,6 +8,7 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Objects;
+import java.util.stream.Stream;
 
 public final class InterceptorRegistry {
     // private final HashMap<Class<? extends Annotation>, List<AroundAdvice>> aroundAdvicesByAnnotationMap = new HashMap<>();
@@ -77,8 +78,12 @@ public final class InterceptorRegistry {
 
     List<Interceptor> findInterceptors(Method method){
         Objects.requireNonNull(method);
-        return Arrays
-                .stream(method.getAnnotations())
+        return Stream.of(
+                        Arrays.stream(method.getDeclaringClass().getAnnotations()),
+                        Arrays.stream(method.getAnnotations()),
+                        Arrays.stream(method.getParameterAnnotations()).flatMap(Arrays::stream))
+                .flatMap(s -> s)
+                .distinct()
                 .flatMap(annotation -> interceptorsByAnnotationMap.getOrDefault(annotation.annotationType(), List.of()).stream())
                 .toList();
     }
