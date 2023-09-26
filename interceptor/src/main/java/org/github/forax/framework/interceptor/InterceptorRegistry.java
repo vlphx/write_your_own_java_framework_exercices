@@ -14,6 +14,7 @@ import java.util.stream.Stream;
 public final class InterceptorRegistry {
     private AroundAdvice advice;
     private final HashMap<Class<? extends Annotation>, List<AroundAdvice>> aroundAdvicesByAnnotationMap = new HashMap<>();
+    private final HashMap<Class<? extends Annotation>, List<Interceptor>> interceptorsByAnnotationMap = new HashMap<>();
 
     List<AroundAdvice> findAdvices(Method method) {
         Objects.requireNonNull(method);
@@ -48,5 +49,19 @@ public final class InterceptorRegistry {
                     }
                 })
         );
+    }
+
+    public void addInterceptor(Class<? extends Annotation> annotationClass, Interceptor interceptor){
+        Objects.requireNonNull(annotationClass);
+        Objects.requireNonNull(interceptor);
+        interceptorsByAnnotationMap.computeIfAbsent(annotationClass, __ -> new ArrayList<>()).add(interceptor);
+    }
+
+    List<Interceptor> findInterceptors(Method method){
+        Objects.requireNonNull(method);
+        return Arrays
+                .stream(method.getAnnotations())
+                .flatMap(annotation -> interceptorsByAnnotationMap.getOrDefault(annotation.annotationType(), List.of()).stream())
+                .toList();
     }
 }
