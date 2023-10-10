@@ -1,26 +1,18 @@
 package com.github.forax.framework.orm;
 
-import org.h2.jdbcx.JdbcDataSource;
-
 import javax.sql.DataSource;
-import java.beans.BeanInfo;
-import java.beans.Introspector;
 import java.beans.PropertyDescriptor;
 import java.io.Serial;
-import java.lang.reflect.Constructor;
+import java.lang.reflect.Method;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Proxy;
 import java.sql.Connection;
-import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.sql.Statement;
-import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
-import java.util.StringJoiner;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 public final class ORM {
@@ -75,6 +67,7 @@ public final class ORM {
 
 
     // --- do not change the code above
+
     /*To associate a thread for a connection*/
     public static final ThreadLocal<Connection> CONNECTION_THREAD_LOCAL = new ThreadLocal<>();
 
@@ -100,5 +93,73 @@ public final class ORM {
             throw new IllegalStateException("There is no connection available");
         }
         return connection;
+    }
+
+    static String findTableName(Class<?> beanClass) {
+        var tableAnnotation = beanClass.getAnnotation(Table.class);
+        var name = tableAnnotation == null
+                ? beanClass.getSimpleName()
+                : tableAnnotation.value();
+        return name.toUpperCase(Locale.ROOT);
+    }
+
+    private static Method getGetterMethod(PropertyDescriptor property) {
+        var getter = property.getReadMethod();
+        if (getter == null) {
+            throw new IllegalStateException("No getter for the given property: " + property.getName());
+        }
+        return getter;
+    }
+
+    static String findColumnName(PropertyDescriptor property) {
+        var getter = getGetterMethod(property);
+        var column = getter.getAnnotation(Column.class);
+        var name = column == null
+                ? property.getName()
+                : column.value();
+        return name.toUpperCase(Locale.ROOT);
+    }
+
+    private static boolean isAnnotatedGeneratedValue(PropertyDescriptor property){
+        var getter = getGetterMethod(property);
+        return getter.isAnnotationPresent(GeneratedValue.class);
+    }
+    private static boolean isAnnotatedId(PropertyDescriptor property){
+        var getter = getGetterMethod(property);
+        return getter.isAnnotationPresent(Id.class);
+    }
+
+    private static String getColumnNameForSQLStatement(PropertyDescriptor property) {
+        var columnName = findColumnName(property);
+        var columnPropertyType = property.getPropertyType();
+        var typeName = TYPE_MAPPING.get(columnPropertyType);
+        if (typeName == null) {
+            throw new IllegalStateException("Column type name is unknown: " + columnPropertyType);
+        }
+        var notNull = columnPropertyType.isPrimitive() ? " NOT NULL" : "";
+        var autoIncrement = isAnnotatedGeneratedValue(property)
+                ? " AUTO_INCREMENT"
+                : "";
+        var primaryKey = isAnnotatedId(property)
+                ? ", PRIMARY KEY (" + columnName + ")"
+                : "";
+        return columnName + " " + typeName + notNull + autoIncrement + primaryKey;
+    }
+
+    static void createTable(Class<?> beanClass) throws SQLException {
+        Objects.requireNonNull(beanClass);
+        var tableName = findTableName(beanClass);
+        // get columns
+        var beanInfo = Utils.beanInfo(beanClass);
+        var update = "CREATE TABLE " + tableName + " " +
+                Arrays
+                        .stream(beanInfo.getPropertyDescriptors())
+                        .filter(property -> !property.getName().equals("class"))
+                        .map(ORM::getColumnNameForSQLStatement)
+                        .collect(Collectors.joining(",", "(\n", "\n);"));
+        var connection = ORM.currentConnection();
+        try (var statement = connection.createStatement()) {
+            statement.executeUpdate(update);
+        }
     }
 }
