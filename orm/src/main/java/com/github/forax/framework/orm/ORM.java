@@ -7,11 +7,10 @@ import java.lang.reflect.Method;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Proxy;
 import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.util.Arrays;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Objects;
+import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -120,11 +119,12 @@ public final class ORM {
         return name.toUpperCase(Locale.ROOT);
     }
 
-    private static boolean isAnnotatedGeneratedValue(PropertyDescriptor property){
+    private static boolean isAnnotatedGeneratedValue(PropertyDescriptor property) {
         var getter = getGetterMethod(property);
         return getter.isAnnotationPresent(GeneratedValue.class);
     }
-    private static boolean isAnnotatedId(PropertyDescriptor property){
+
+    private static boolean isAnnotatedId(PropertyDescriptor property) {
         var getter = getGetterMethod(property);
         return getter.isAnnotationPresent(Id.class);
     }
@@ -160,6 +160,59 @@ public final class ORM {
         var connection = ORM.currentConnection();
         try (var statement = connection.createStatement()) {
             statement.executeUpdate(update);
+        }
+    }
+
+    public static <T extends Repository<?, ?>> T createRepository(Class<T> repositoryClass) {
+        var beanType = findBeanTypeFromRepository(repositoryClass);
+        return repositoryClass.cast(
+                Proxy.newProxyInstance(
+                        repositoryClass.getClassLoader(),
+                        new Class<?>[]{repositoryClass},
+                        (Object proxy, Method method, Object[] args) -> {
+                            try {
+                                return switch (method.getName()) {
+                                    case "findAll" -> findAll(beanType);
+                                    case "hashCode", "equals", "toString" -> throw new UnsupportedOperationException("Method: " + method + " not supported");
+                                    default -> throw new IllegalStateException("Method: " + method + " not supported");
+                                };
+                            } catch (SQLException e) {
+                                throw new UncheckedSQLException(e);
+                            }
+                        }
+                )
+        );
+    }
+
+    private static List<?> findAll(Class<?> beanType) throws SQLException {
+        var constructor = Utils.defaultConstructor(beanType);
+        var beanInfo = Utils.beanInfo(beanType);
+        var properties = beanInfo.getPropertyDescriptors();
+
+        var connection = currentConnection();
+        var tableName = findTableName(beanType);
+        var sqlQuery = "SELECT * FROM " + tableName;
+        try (PreparedStatement statement = connection.prepareStatement(sqlQuery)) {
+            try (ResultSet resultSet = statement.executeQuery()) {
+                var list = new ArrayList<>();
+                while (resultSet.next()) {
+                    // I suppose that my constructor has no parameters
+                    var instance = Utils.newInstance(constructor);
+                    var index = 1;
+                    for (var property : properties) {
+                        if (property.getName().equals("class")) {
+                            continue;
+                        }
+                        var value = resultSet.getObject(index++);
+                        var setter = property.getWriteMethod();
+                        Utils.invokeMethod(instance, setter, value);
+                    }
+                    list.add(instance);
+                    /*Long id = (Long) resultSet.getObject(1);
+                    String name = (String) resultSet.getObject(2);*/
+                }
+                return list;
+            }
         }
     }
 }

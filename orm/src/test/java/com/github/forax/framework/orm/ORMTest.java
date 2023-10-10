@@ -207,7 +207,7 @@ public class ORMTest {
     public EmptyBean() { }
   }
 
-/*
+
   @Nested
   public class Q3 {
 
@@ -593,7 +593,6 @@ public class ORMTest {
     }
   }
 
-
   @Nested
   public class Q6 {
     @Test @Tag("Q6")
@@ -654,7 +653,7 @@ public class ORMTest {
       assertThrows(NullPointerException.class, () -> ORM.createRepository(null));
     }
   }
-
+/*
   @Nested
   public class Q7 {
 
