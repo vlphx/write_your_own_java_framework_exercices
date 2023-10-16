@@ -1,8 +1,10 @@
 package com.github.forax.framework.orm;
 
 import javax.sql.DataSource;
+import java.beans.BeanInfo;
 import java.beans.PropertyDescriptor;
 import java.io.Serial;
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Proxy;
@@ -80,6 +82,8 @@ public final class ORM {
             } catch (SQLException e) {
                 connection.rollback();
                 throw e;
+            } catch (UncheckedSQLException error) {
+                throw new SQLException(error);
             } finally {
                 CONNECTION_THREAD_LOCAL.remove();
             }
@@ -173,7 +177,8 @@ public final class ORM {
                             try {
                                 return switch (method.getName()) {
                                     case "findAll" -> findAll(beanType);
-                                    case "hashCode", "equals", "toString" -> throw new UnsupportedOperationException("Method: " + method + " not supported");
+                                    case "hashCode", "equals", "toString" ->
+                                            throw new UnsupportedOperationException("Method: " + method + " not supported");
                                     default -> throw new IllegalStateException("Method: " + method + " not supported");
                                 };
                             } catch (SQLException e) {
@@ -184,35 +189,44 @@ public final class ORM {
         );
     }
 
-    private static List<?> findAll(Class<?> beanType) throws SQLException {
-        var constructor = Utils.defaultConstructor(beanType);
-        var beanInfo = Utils.beanInfo(beanType);
+    public static <T> T toEntityClass(ResultSet resultSet, BeanInfo beanInfo, Constructor<T> constructor) throws SQLException {
+        var newInstance = Utils.newInstance(constructor);
         var properties = beanInfo.getPropertyDescriptors();
 
+        for (var property : properties) {
+            var name = property.getName();
+            if (name.equals("class")) {
+                continue;
+            }
+            var setter = property.getWriteMethod();
+            var argument = resultSet.getObject(name);
+            Utils.invokeMethod(newInstance, setter, argument);
+        }
+        return newInstance;
+    }
+
+    private static List<?> findAll(Class<?> beanType) throws SQLException {
         var connection = currentConnection();
+
         var tableName = findTableName(beanType);
         var sqlQuery = "SELECT * FROM " + tableName;
+
+        var constructor = Utils.defaultConstructor(beanType);
+        var beanInfo = Utils.beanInfo(beanType);
+        
+        return findAll(connection, sqlQuery, beanInfo, constructor);
+    }
+
+    public static <T> List<T> findAll(Connection connection, String sqlQuery, BeanInfo beanInfo, Constructor<T> constructor) throws SQLException {
+        var list = new ArrayList<T>();
         try (PreparedStatement statement = connection.prepareStatement(sqlQuery)) {
             try (ResultSet resultSet = statement.executeQuery()) {
-                var list = new ArrayList<>();
                 while (resultSet.next()) {
-                    // I suppose that my constructor has no parameters
-                    var instance = Utils.newInstance(constructor);
-                    var index = 1;
-                    for (var property : properties) {
-                        if (property.getName().equals("class")) {
-                            continue;
-                        }
-                        var value = resultSet.getObject(index++);
-                        var setter = property.getWriteMethod();
-                        Utils.invokeMethod(instance, setter, value);
-                    }
+                    var instance = toEntityClass(resultSet, beanInfo, constructor);
                     list.add(instance);
-                    /*Long id = (Long) resultSet.getObject(1);
-                    String name = (String) resultSet.getObject(2);*/
                 }
-                return list;
             }
         }
+        return list;
     }
 }
