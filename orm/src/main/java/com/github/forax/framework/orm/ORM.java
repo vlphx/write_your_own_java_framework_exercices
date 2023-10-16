@@ -167,6 +167,44 @@ public final class ORM {
         }
     }
 
+    public static String createSaveQuery(String tableName, BeanInfo beanInfo) {
+        var properties = beanInfo.getPropertyDescriptors();
+        var columns = Arrays.stream(properties)
+                .filter(property -> !property.getName().equals("class"))
+                .map(ORM::findColumnName)
+                .map(columnName -> columnName.toLowerCase(Locale.ROOT))
+                .collect(Collectors.joining(", "));
+        var values = Arrays.stream(properties)
+                .filter(property -> !property.getName().equals("class"))
+                .map(property -> "?")
+                .collect(Collectors.joining(", "));
+        return "INSERT INTO " + tableName + " (" + columns + ") VALUES (" + values + ");";
+    }
+
+    public static <T> T save(Connection connection, String tableName, BeanInfo beanInfo, T bean, String idProperty) throws SQLException {
+        Objects.requireNonNull(connection);
+        Objects.requireNonNull(tableName);
+        Objects.requireNonNull(beanInfo);
+
+        var saveQuery = createSaveQuery(tableName, beanInfo);
+        int parameterIndex = 1;
+        try (var statement = connection.prepareStatement(saveQuery)) {
+            var properties = beanInfo.getPropertyDescriptors();
+            for (var property : properties) {
+                var name = property.getName();
+                if (name.equals("class")) {
+                    continue;
+                }
+                var getter = property.getReadMethod();
+                var argument = Utils.invokeMethod(bean, getter);
+                statement.setObject(parameterIndex++, argument);
+            }
+            statement.executeUpdate();
+        }
+        connection.commit();
+        return bean;
+    }
+
     public static <T extends Repository<?, ?>> T createRepository(Class<T> repositoryClass) {
         var beanType = findBeanTypeFromRepository(repositoryClass);
         return repositoryClass.cast(
@@ -176,6 +214,8 @@ public final class ORM {
                         (Object proxy, Method method, Object[] args) -> {
                             try {
                                 return switch (method.getName()) {
+                                    case "save" ->
+                                            save(currentConnection(), findTableName(beanType), Utils.beanInfo(beanType), args[0], null);
                                     case "findAll" -> findAll(beanType);
                                     case "hashCode", "equals", "toString" ->
                                             throw new UnsupportedOperationException("Method: " + method + " not supported");
@@ -190,6 +230,10 @@ public final class ORM {
     }
 
     public static <T> T toEntityClass(ResultSet resultSet, BeanInfo beanInfo, Constructor<T> constructor) throws SQLException {
+        Objects.requireNonNull(resultSet);
+        Objects.requireNonNull(beanInfo);
+        Objects.requireNonNull(constructor);
+
         var newInstance = Utils.newInstance(constructor);
         var properties = beanInfo.getPropertyDescriptors();
 
@@ -206,6 +250,8 @@ public final class ORM {
     }
 
     private static List<?> findAll(Class<?> beanType) throws SQLException {
+        Objects.requireNonNull(beanType);
+
         var connection = currentConnection();
 
         var tableName = findTableName(beanType);
@@ -213,11 +259,16 @@ public final class ORM {
 
         var constructor = Utils.defaultConstructor(beanType);
         var beanInfo = Utils.beanInfo(beanType);
-        
+
         return findAll(connection, sqlQuery, beanInfo, constructor);
     }
 
-    public static <T> List<T> findAll(Connection connection, String sqlQuery, BeanInfo beanInfo, Constructor<T> constructor) throws SQLException {
+    public static <T> List<T> findAll(Connection connection, String sqlQuery, BeanInfo beanInfo, Constructor<? extends T> constructor) throws SQLException {
+        Objects.requireNonNull(connection);
+        Objects.requireNonNull(sqlQuery);
+        Objects.requireNonNull(beanInfo);
+        Objects.requireNonNull(constructor);
+
         var list = new ArrayList<T>();
         try (PreparedStatement statement = connection.prepareStatement(sqlQuery)) {
             try (ResultSet resultSet = statement.executeQuery()) {

@@ -8,848 +8,904 @@ import org.junit.jupiter.api.Test;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.sql.SQLException;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Objects;
-import java.util.Optional;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.LongStream;
 
-import static org.junit.jupiter.api.Assertions.assertAll;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 @SuppressWarnings("static-method")
 public class ORMTest {
 
-  @Nested
-  public class Q1 {
-    @Test @Tag("Q1")
-    @SuppressWarnings("resource")
-    public void testCurrentConnection() throws SQLException {
-      var dataSource = new JdbcDataSource();
-      dataSource.setURL("jdbc:h2:mem:test");
-      ORM.transaction(dataSource, () -> {
-        var connection = ORM.currentConnection();
-        assertNotNull(connection);
-      });
-    }
+    @Nested
+    public class Q1 {
+        @Test
+        @Tag("Q1")
+        @SuppressWarnings("resource")
+        public void testCurrentConnection() throws SQLException {
+            var dataSource = new JdbcDataSource();
+            dataSource.setURL("jdbc:h2:mem:test");
+            ORM.transaction(dataSource, () -> {
+                var connection = ORM.currentConnection();
+                assertNotNull(connection);
+            });
+        }
 
-    @Test @Tag("Q1")
-    @SuppressWarnings("resource")
-    public void testCurrentConnectionOutsideATransaction() {
-      assertThrows(IllegalStateException.class, ORM::currentConnection);
-    }
+        @Test
+        @Tag("Q1")
+        @SuppressWarnings("resource")
+        public void testCurrentConnectionOutsideATransaction() {
+            assertThrows(IllegalStateException.class, ORM::currentConnection);
+        }
 
-    @Test @Tag("Q1")
-    @SuppressWarnings("resource")
-    public void testTransactionIsNotAvailableAfterTransaction() throws SQLException {
-      var dataSource = new JdbcDataSource();
-      dataSource.setURL("jdbc:h2:mem:test");
-      ORM.transaction(dataSource, () -> {
-        // empty
-      });
-      assertThrows(IllegalStateException.class, ORM::currentConnection);
-    }
+        @Test
+        @Tag("Q1")
+        @SuppressWarnings("resource")
+        public void testTransactionIsNotAvailableAfterTransaction() throws SQLException {
+            var dataSource = new JdbcDataSource();
+            dataSource.setURL("jdbc:h2:mem:test");
+            ORM.transaction(dataSource, () -> {
+                // empty
+            });
+            assertThrows(IllegalStateException.class, ORM::currentConnection);
+        }
 
-    @Test @Tag("Q1")
-    @SuppressWarnings("resource")
-    public void testTransactionIsNotAvailableAfterTransactionWhichEndsWithAnException() throws SQLException {
-      var dataSource = new JdbcDataSource();
-      dataSource.setURL("jdbc:h2:mem:test");
-      assertThrows(SQLException.class, () -> {
-        ORM.transaction(dataSource, () -> {
-          throw new SQLException();
-        });
-      });
-      assertThrows(IllegalStateException.class, ORM::currentConnection);
-    }
+        @Test
+        @Tag("Q1")
+        @SuppressWarnings("resource")
+        public void testTransactionIsNotAvailableAfterTransactionWhichEndsWithAnException() throws SQLException {
+            var dataSource = new JdbcDataSource();
+            dataSource.setURL("jdbc:h2:mem:test");
+            assertThrows(SQLException.class, () -> {
+                ORM.transaction(dataSource, () -> {
+                    throw new SQLException();
+                });
+            });
+            assertThrows(IllegalStateException.class, ORM::currentConnection);
+        }
 
-    @Test @Tag("Q1")
-    @SuppressWarnings("resource")
-    public void testTransactionNull() {
-      var dataSource = new JdbcDataSource();
-      dataSource.setURL("jdbc:h2:mem:test");
-      assertAll(
-          () -> assertThrows(NullPointerException.class, () -> ORM.transaction(dataSource, null)),
-          () -> assertThrows(NullPointerException.class, () -> ORM.transaction(null, () -> {}))
-      );
-    }
-  }
-
-
-  @Nested
-  public class Q2 {
-
-    @Test @Tag("Q2")
-    @SuppressWarnings("resource")
-    public void testCommitConnection() throws SQLException, IOException {
-      var path = Files.createTempFile("", ".h2db");
-      try {
-        var dataSource = new JdbcDataSource();
-        dataSource.setURL("jdbc:h2:" + path);
-        ORM.transaction(dataSource, () -> {
-          var connection = ORM.currentConnection();
-          var update = """
-            CREATE TABLE FOO (
-              ID BIGINT,
-              NAME VARCHAR(255),
-              PRIMARY KEY (ID)
+        @Test
+        @Tag("Q1")
+        @SuppressWarnings("resource")
+        public void testTransactionNull() {
+            var dataSource = new JdbcDataSource();
+            dataSource.setURL("jdbc:h2:mem:test");
+            assertAll(
+                    () -> assertThrows(NullPointerException.class, () -> ORM.transaction(dataSource, null)),
+                    () -> assertThrows(NullPointerException.class, () -> ORM.transaction(null, () -> {
+                    }))
             );
-            INSERT INTO FOO (ID, NAME) VALUES (1, 'bar');
-            INSERT INTO FOO (ID, NAME) VALUES (2, 'baz');
-            """;
+        }
+    }
 
-          try(var statement = connection.createStatement()) {
-            statement.executeUpdate(update);
-          }
-          // commit
-        });
-        ORM.transaction(dataSource, () -> {
-          var connection2 = ORM.currentConnection();
-          var query2 = """
-            SELECT * FROM FOO;
-            """;
-          record Foo(Long id, String name) {}
-          var list = new ArrayList<>();
-          try(var statement = connection2.createStatement()) {
-            var resultSet = statement.executeQuery(query2);
-            while(resultSet.next()) {
-              var id = (Long) resultSet.getObject(1);
-              var name = (String) resultSet.getObject(2);
-              list.add(new Foo(id, name));
+
+    @Nested
+    public class Q2 {
+
+        @Test
+        @Tag("Q2")
+        @SuppressWarnings("resource")
+        public void testCommitConnection() throws SQLException, IOException {
+            var path = Files.createTempFile("", ".h2db");
+            try {
+                var dataSource = new JdbcDataSource();
+                dataSource.setURL("jdbc:h2:" + path);
+                ORM.transaction(dataSource, () -> {
+                    var connection = ORM.currentConnection();
+                    var update = """
+                            CREATE TABLE FOO (
+                              ID BIGINT,
+                              NAME VARCHAR(255),
+                              PRIMARY KEY (ID)
+                            );
+                            INSERT INTO FOO (ID, NAME) VALUES (1, 'bar');
+                            INSERT INTO FOO (ID, NAME) VALUES (2, 'baz');
+                            """;
+
+                    try (var statement = connection.createStatement()) {
+                        statement.executeUpdate(update);
+                    }
+                    // commit
+                });
+                ORM.transaction(dataSource, () -> {
+                    var connection2 = ORM.currentConnection();
+                    var query2 = """
+                            SELECT * FROM FOO;
+                            """;
+                    record Foo(Long id, String name) {
+                    }
+                    var list = new ArrayList<>();
+                    try (var statement = connection2.createStatement()) {
+                        var resultSet = statement.executeQuery(query2);
+                        while (resultSet.next()) {
+                            var id = (Long) resultSet.getObject(1);
+                            var name = (String) resultSet.getObject(2);
+                            list.add(new Foo(id, name));
+                        }
+                    }
+                    assertEquals(List.of(new Foo(1L, "bar"), new Foo(2L, "baz")), list);
+                });
+            } finally {
+                Files.delete(path);
             }
-          }
-          assertEquals(List.of(new Foo(1L, "bar"), new Foo(2L, "baz")), list);
-        });
-      } finally {
-        Files.delete(path);
-      }
-    }
+        }
 
-    @Test @Tag("Q2")
-    @SuppressWarnings("resource")
-    public void testRollbackConnection() throws SQLException, IOException {
-      var path = Files.createTempFile("", ".h2db");
-      try {
-        var dataSource = new JdbcDataSource();
-        dataSource.setURL("jdbc:h2:" + path);
+        @Test
+        @Tag("Q2")
+        @SuppressWarnings("resource")
+        public void testRollbackConnection() throws SQLException, IOException {
+            var path = Files.createTempFile("", ".h2db");
+            try {
+                var dataSource = new JdbcDataSource();
+                dataSource.setURL("jdbc:h2:" + path);
 
-        ORM.transaction(dataSource, () -> {
-          var connection = ORM.currentConnection();
-          var update = """
-            CREATE TABLE FOO (
-              ID BIGINT,
-              NAME VARCHAR(255),
-              PRIMARY KEY (ID)
-            );
-            """;
-          try(var statement = connection.createStatement()) {
-            statement.executeUpdate(update);
-          }
-          // commit
-        });
-        assertThrows(RuntimeException.class, () -> {
-          ORM.transaction(dataSource, () -> {
-            var connection = ORM.currentConnection();
-            var update = """
-            INSERT INTO FOO (ID, NAME) VALUES (1, 'bar');
-            INSERT INTO FOO (ID, NAME) VALUES (2, 'baz');
-            """;
-            try(var statement = connection.createStatement()) {
-              statement.executeUpdate(update);
+                ORM.transaction(dataSource, () -> {
+                    var connection = ORM.currentConnection();
+                    var update = """
+                            CREATE TABLE FOO (
+                              ID BIGINT,
+                              NAME VARCHAR(255),
+                              PRIMARY KEY (ID)
+                            );
+                            """;
+                    try (var statement = connection.createStatement()) {
+                        statement.executeUpdate(update);
+                    }
+                    // commit
+                });
+                assertThrows(RuntimeException.class, () -> {
+                    ORM.transaction(dataSource, () -> {
+                        var connection = ORM.currentConnection();
+                        var update = """
+                                INSERT INTO FOO (ID, NAME) VALUES (1, 'bar');
+                                INSERT INTO FOO (ID, NAME) VALUES (2, 'baz');
+                                """;
+                        try (var statement = connection.createStatement()) {
+                            statement.executeUpdate(update);
+                        }
+                        throw new RuntimeException("rollback");
+                        // rollback
+                    });
+                });
+                ORM.transaction(dataSource, () -> {
+                    var connection2 = ORM.currentConnection();
+                    var query2 = """
+                            SELECT * FROM FOO;
+                            """;
+                    var list = new ArrayList<Long>();
+                    try (var statement = connection2.createStatement()) {
+                        var resultSet = statement.executeQuery(query2);
+                        while (resultSet.next()) {
+                            list.add((Long) resultSet.getObject(1));
+                        }
+                    }
+                    assertEquals(List.of(), list);
+                });
+            } finally {
+                Files.delete(path);
             }
-            throw new RuntimeException("rollback");
-            // rollback
-          });
-        });
-        ORM.transaction(dataSource, () -> {
-          var connection2 = ORM.currentConnection();
-          var query2 = """
-            SELECT * FROM FOO;
-            """;
-          var list = new ArrayList<Long>();
-          try(var statement = connection2.createStatement()) {
-            var resultSet = statement.executeQuery(query2);
-            while (resultSet.next()) {
-              list.add((Long) resultSet.getObject(1));
+        }
+    }
+
+
+    @SuppressWarnings("unused")
+    public static final class Furniture {
+        private String name;
+
+        public Furniture() {
+        }  // for reflection
+
+        @Column("CAT_NAME")
+        public String getName() {
+            return name;
+        }
+    }
+
+    @Table("EMPTY")
+    public static final class EmptyBean {
+        public EmptyBean() {
+        }
+    }
+
+
+    @Nested
+    public class Q3 {
+
+        @Test
+        @Tag("Q3")
+        public void testFindTableName() {
+            assertAll(
+                    () -> assertEquals("FURNITURE", ORM.findTableName(Furniture.class)),
+                    () -> assertEquals("EMPTY", ORM.findTableName(EmptyBean.class))
+            );
+        }
+
+        @Test
+        @Tag("Q3")
+        public void testFindColumnName() {
+            var bean = Utils.beanInfo(Furniture.class);
+            var property = Arrays.stream(bean.getPropertyDescriptors())
+                    .filter(p -> !p.getName().equals("class"))
+                    .findFirst().orElseThrow();
+            assertEquals("CAT_NAME", ORM.findColumnName(property));
+        }
+
+        @Test
+        @Tag("Q3")
+        @SuppressWarnings("resource")
+        public void testCreateTableFurniture() throws SQLException {
+            record Column(String name, String typeName, int size, boolean isNullable, boolean isAutoIncrement) {
             }
-          }
-          assertEquals(List.of(), list);
-        });
-      } finally {
-        Files.delete(path);
-      }
-    }
-  }
-
-
-  @SuppressWarnings("unused")
-  public static final class Furniture {
-    private String name;
-
-    public Furniture() { }  // for reflection
-
-    @Column("CAT_NAME")
-    public String getName() {
-      return name;
-    }
-  }
-
-  @Table("EMPTY")
-  public static final class EmptyBean {
-    public EmptyBean() { }
-  }
-
-
-  @Nested
-  public class Q3 {
-
-    @Test @Tag("Q3")
-    public void testFindTableName() {
-      assertAll(
-          () -> assertEquals("FURNITURE", ORM.findTableName(Furniture.class)),
-          () -> assertEquals("EMPTY", ORM.findTableName(EmptyBean.class))
-      );
-    }
-
-    @Test @Tag("Q3")
-    public void testFindColumnName() {
-      var bean = Utils.beanInfo(Furniture.class);
-      var property = Arrays.stream(bean.getPropertyDescriptors())
-          .filter(p -> !p.getName().equals("class"))
-          .findFirst().orElseThrow();
-      assertEquals("CAT_NAME", ORM.findColumnName(property));
-    }
-
-    @Test @Tag("Q3")
-    @SuppressWarnings("resource")
-    public void testCreateTableFurniture() throws SQLException {
-      record Column(String name, String typeName, int size, boolean isNullable, boolean isAutoIncrement) {}
-      var dataSource = new JdbcDataSource();
-      dataSource.setURL("jdbc:h2:mem:test");
-      ORM.transaction(dataSource, () -> {
-        ORM.createTable(Furniture.class);
-        var set = new HashSet<Column>();
-        var connection = ORM.currentConnection();
-        var metaData = connection.getMetaData();
-        try(var resultSet = metaData.getColumns(null, null, "FURNITURE", null)) {
-          while(resultSet.next()) {
-            var column = new Column(
-                resultSet.getString(4),                 // COLUMN_NAME
-                resultSet.getString(6),                 // TYPE_NAME
-                resultSet.getInt(7),                    // COLUMN_SIZE
-                resultSet.getString(18).equals("YES"),  // IS_NULLABLE
-                resultSet.getString(23).equals("YES")   // IS_AUTOINCREMENT
-            );
-            set.add(column);
-          }
+            var dataSource = new JdbcDataSource();
+            dataSource.setURL("jdbc:h2:mem:test");
+            ORM.transaction(dataSource, () -> {
+                ORM.createTable(Furniture.class);
+                var set = new HashSet<Column>();
+                var connection = ORM.currentConnection();
+                var metaData = connection.getMetaData();
+                try (var resultSet = metaData.getColumns(null, null, "FURNITURE", null)) {
+                    while (resultSet.next()) {
+                        var column = new Column(
+                                resultSet.getString(4),                 // COLUMN_NAME
+                                resultSet.getString(6),                 // TYPE_NAME
+                                resultSet.getInt(7),                    // COLUMN_SIZE
+                                resultSet.getString(18).equals("YES"),  // IS_NULLABLE
+                                resultSet.getString(23).equals("YES")   // IS_AUTOINCREMENT
+                        );
+                        set.add(column);
+                    }
+                }
+                assertEquals(Set.of(
+                        new Column("CAT_NAME", "VARCHAR", 255, true, false)
+                ), set);
+            });
         }
-        assertEquals(Set.of(
-            new Column("CAT_NAME", "VARCHAR", 255, true, false)
-        ), set);
-      });
-    }
 
-    @Test @Tag("Q3")
-    @SuppressWarnings("resource")
-    public void testCreateTableEmpty() throws SQLException {
-      record Column(String name, String typeName, int size, boolean isNullable, boolean isAutoIncrement) {}
-      var dataSource = new JdbcDataSource();
-      dataSource.setURL("jdbc:h2:mem:test");
-      ORM.transaction(dataSource, () -> {
-        ORM.createTable(EmptyBean.class);
-        var set = new HashSet<Column>();
-        var connection = ORM.currentConnection();
-        var metaData = connection.getMetaData();
-        try(var resultSet = metaData.getColumns(null, null, "EMPTY", null)) {
-          while(resultSet.next()) {
-            var column = new Column(
-                resultSet.getString(4),                 // COLUMN_NAME
-                resultSet.getString(6),                 // TYPE_NAME
-                resultSet.getInt(7),                    // COLUMN_SIZE
-                resultSet.getString(18).equals("YES"),  // IS_NULLABLE
-                resultSet.getString(23).equals("YES")   // IS_AUTOINCREMENT
-            );
-            set.add(column);
-          }
+        @Test
+        @Tag("Q3")
+        @SuppressWarnings("resource")
+        public void testCreateTableEmpty() throws SQLException {
+            record Column(String name, String typeName, int size, boolean isNullable, boolean isAutoIncrement) {
+            }
+            var dataSource = new JdbcDataSource();
+            dataSource.setURL("jdbc:h2:mem:test");
+            ORM.transaction(dataSource, () -> {
+                ORM.createTable(EmptyBean.class);
+                var set = new HashSet<Column>();
+                var connection = ORM.currentConnection();
+                var metaData = connection.getMetaData();
+                try (var resultSet = metaData.getColumns(null, null, "EMPTY", null)) {
+                    while (resultSet.next()) {
+                        var column = new Column(
+                                resultSet.getString(4),                 // COLUMN_NAME
+                                resultSet.getString(6),                 // TYPE_NAME
+                                resultSet.getInt(7),                    // COLUMN_SIZE
+                                resultSet.getString(18).equals("YES"),  // IS_NULLABLE
+                                resultSet.getString(23).equals("YES")   // IS_AUTOINCREMENT
+                        );
+                        set.add(column);
+                    }
+                }
+                assertEquals(Set.of(), set);
+            });
         }
-        assertEquals(Set.of(), set);
-      });
-    }
 
-    @Test @Tag("Q3")
-    public void testCreateTableNotInTransaction() {
-      var dataSource = new JdbcDataSource();
-      dataSource.setURL("jdbc:h2:mem:test");
-      assertThrows(IllegalStateException.class, () -> ORM.createTable(Furniture.class));
-    }
-
-    @Test @Tag("Q3")
-    public void testCreateTableSQLExceptionAreCorrectlyPropagated() {
-      interface Static {
-        @SuppressWarnings("unused")
-        @Table("weird!name")
-        class InvalidTableName {
-          private long id;
-
-          @Id
-          public long getId() {
-            return id;
-          }
-          public void setId(long id) {
-            this.id = id;
-          }
+        @Test
+        @Tag("Q3")
+        public void testCreateTableNotInTransaction() {
+            var dataSource = new JdbcDataSource();
+            dataSource.setURL("jdbc:h2:mem:test");
+            assertThrows(IllegalStateException.class, () -> ORM.createTable(Furniture.class));
         }
-      }
 
-      var dataSource = new JdbcDataSource();
-      dataSource.setURL("jdbc:h2:mem:test");
-      assertThrows(SQLException.class, () -> {
-        ORM.transaction(dataSource, () -> ORM.createTable(Static.InvalidTableName.class));
-      });
-    }
+        @Test
+        @Tag("Q3")
+        public void testCreateTableSQLExceptionAreCorrectlyPropagated() {
+            interface Static {
+                @SuppressWarnings("unused")
+                @Table("weird!name")
+                class InvalidTableName {
+                    private long id;
 
-    @Test @Tag("Q3")
-    public void testCreateTableNull() {
-      var dataSource = new JdbcDataSource();
-      dataSource.setURL("jdbc:h2:mem:test");
-      assertThrows(NullPointerException.class, () -> ORM.createTable(null));
-    }
-  }
+                    @Id
+                    public long getId() {
+                        return id;
+                    }
 
-  @SuppressWarnings("unused")
-  public static final class Company {
-    private Long id;
-    private String name;
-    private int employeeCount;
+                    public void setId(long id) {
+                        this.id = id;
+                    }
+                }
+            }
 
-    public Company() { }  // for reflection
-
-    public Long getId() {
-      return id;
-    }
-    public String getName() {
-      return name;
-    }
-    @Column("EMPLOYEE_COUNT")
-    public int getEmployeeCount() {
-      return employeeCount;
-    }
-  }
-
-  @Nested
-  public class Q4 {
-
-    @Test @Tag("Q4")
-    @SuppressWarnings("resource")
-    public void testCreateTableCompany() throws SQLException {
-      record Column(String name, String typeName, int size, boolean isNullable, boolean isAutoIncrement) {}
-      var dataSource = new JdbcDataSource();
-      dataSource.setURL("jdbc:h2:mem:test");
-      ORM.transaction(dataSource, () -> {
-        ORM.createTable(Company.class);
-        var set = new HashSet<Column>();
-        var connection = ORM.currentConnection();
-        var metaData = connection.getMetaData();
-        try(var resultSet = metaData.getColumns(null, null, "COMPANY", null)) {
-          while(resultSet.next()) {
-            var column = new Column(
-                resultSet.getString(4),                 // COLUMN_NAME
-                resultSet.getString(6),                 // TYPE_NAME
-                resultSet.getInt(7),                    // COLUMN_SIZE
-                resultSet.getString(18).equals("YES"),  // IS_NULLABLE
-                resultSet.getString(23).equals("YES")   // IS_AUTOINCREMENT
-            );
-            set.add(column);
-          }
+            var dataSource = new JdbcDataSource();
+            dataSource.setURL("jdbc:h2:mem:test");
+            assertThrows(SQLException.class, () -> {
+                ORM.transaction(dataSource, () -> ORM.createTable(Static.InvalidTableName.class));
+            });
         }
-        assertEquals(Set.of(
-            new Column("ID", "BIGINT", 19, true, false),
-            new Column("NAME", "VARCHAR", 255, true, false),
-            new Column("EMPLOYEE_COUNT", "INTEGER", 10, false, false)
-        ), set);
-      });
-    }
-  }
 
-
-  @SuppressWarnings("unused")
-  public static final class Point {
-    private Long id;
-    private int x;
-    private int y;
-
-    public Point() { }  // for reflection
-
-    @Id  // primary key
-    @GeneratedValue  // auto_increment
-    public Long getId() {
-      return id;
-    }
-
-    public int getX() {
-      return x;
-    }
-    public int getY() {
-      return y;
-    }
-  }
-
-  @SuppressWarnings("unused")
-  @Table("User")
-  public static final class User {
-    private Long id;
-    private String name;
-    private int age;
-
-    public User() {}  // for reflection
-
-    @Id  // primary key
-    @GeneratedValue  // auto_increment
-    public Long getId() {
-      return id;
-    }
-    public void setId(Long id) {
-      this.id = id;
-    }
-    public String getName() {
-      return name;
-    }
-    public void setName(String name) {
-      this.name = name;
-    }
-    public int getAge() {
-      return age;
-    }
-    public void setAge(int age) {
-      this.age = age;
-    }
-  }
-
-  @Nested
-  public class Q5 {
-
-    @Test @Tag("Q5")
-    @SuppressWarnings("resource")
-    public void testCreateTablePoint() throws SQLException {
-      record Column(String name, String typeName, int size, boolean isNullable, boolean isAutoIncrement) {}
-      var dataSource = new JdbcDataSource();
-      dataSource.setURL("jdbc:h2:mem:test");
-      ORM.transaction(dataSource, () -> {
-        ORM.createTable(Point.class);
-        var set = new HashSet<Column>();
-        var connection = ORM.currentConnection();
-        var metaData = connection.getMetaData();
-        try(var resultSet = metaData.getColumns(null, null, "POINT", null)) {
-          while(resultSet.next()) {
-            var column = new Column(
-                resultSet.getString(4),                 // COLUMN_NAME
-                resultSet.getString(6),                 // TYPE_NAME
-                resultSet.getInt(7),                    // COLUMN_SIZE
-                resultSet.getString(18).equals("YES"),  // IS_NULLABLE
-                resultSet.getString(23).equals("YES")   // IS_AUTOINCREMENT
-            );
-            set.add(column);
-          }
+        @Test
+        @Tag("Q3")
+        public void testCreateTableNull() {
+            var dataSource = new JdbcDataSource();
+            dataSource.setURL("jdbc:h2:mem:test");
+            assertThrows(NullPointerException.class, () -> ORM.createTable(null));
         }
-        assertEquals(Set.of(
-            new Column("ID", "BIGINT", 19, false, true),
-            new Column("X", "INTEGER", 10, false, false),
-            new Column("Y", "INTEGER", 10, false, false)
-        ), set);
-      });
-    }
-
-    @Test @Tag("Q5")
-    @SuppressWarnings("resource")
-    public void testCreateTableUser() throws SQLException {
-      record Column(String name, String typeName, int size, boolean isNullable, boolean isAutoIncrement) {}
-      var dataSource = new JdbcDataSource();
-      dataSource.setURL("jdbc:h2:mem:test");
-      ORM.transaction(dataSource, () -> {
-        ORM.createTable(User.class);
-        var set = new HashSet<Column>();
-        var connection = ORM.currentConnection();
-        var metaData = connection.getMetaData();
-        try(var resultSet = metaData.getColumns(null, null, "USER", null)) {
-          while(resultSet.next()) {
-            var column = new Column(
-                resultSet.getString(4),                 // COLUMN_NAME
-                resultSet.getString(6),                 // TYPE_NAME
-                resultSet.getInt(7),                    // COLUMN_SIZE
-                resultSet.getString(18).equals("YES"),  // IS_NULLABLE
-                resultSet.getString(23).equals("YES")   // IS_AUTOINCREMENT
-            );
-            set.add(column);
-          }
-        }
-        assertEquals(Set.of(
-            new Column("ID", "BIGINT", 19, false, true),
-            new Column("AGE", "INTEGER", 10, false, false),
-            new Column("NAME", "VARCHAR", 255, true, false)
-        ), set);
-      });
     }
 
     @SuppressWarnings("unused")
-    @Table("USER2")
-    static final class AnotherUser {
-      private Long id;
+    public static final class Company {
+        private Long id;
+        private String name;
+        private int employeeCount;
 
-      public AnotherUser() {}
+        public Company() {
+        }  // for reflection
 
-      @Id
-      @Column("key")
-      public Long getId() {
-        return id;
-      }
-      public void setId(Long id) {
-        this.id = id;
-      }
-    }
-
-    @Test @Tag("Q5")
-    @SuppressWarnings("resource")
-    public void testCreateTableWithColumnNameRenamed() throws SQLException {
-      record Column(String name, String typeName, int size, boolean isNullable, boolean isAutoIncrement) {}
-      var dataSource = new JdbcDataSource();
-      dataSource.setURL("jdbc:h2:mem:test");
-      ORM.transaction(dataSource, () -> {
-        ORM.createTable(AnotherUser.class);
-        var set = new HashSet<Column>();
-        var connection = ORM.currentConnection();
-        var metaData = connection.getMetaData();
-        try(var resultSet = metaData.getColumns(null, null, "USER2", null)) {
-          while(resultSet.next()) {
-            var column = new Column(
-                resultSet.getString(4),                 // COLUMN_NAME
-                resultSet.getString(6),                 // TYPE_NAME
-                resultSet.getInt(7),                    // COLUMN_SIZE
-                resultSet.getString(18).equals("YES"),  // IS_NULLABLE
-                resultSet.getString(23).equals("YES")   // IS_AUTOINCREMENT
-            );
-            set.add(column);
-          }
-        }
-        assertEquals(Set.of(
-            new Column("KEY", "BIGINT", 19, false, false)
-        ), set);
-      });
-    }
-  }
-
-
-  @SuppressWarnings("unused")
-  public static final class Person {
-    private Long id;
-    private String name;
-
-    public Person() {
-    }
-    public Person(Long id, String name) {
-      this.id = id;
-      this.name = name;
-    }
-
-    @Id
-    public Long getId() {
-      return id;
-    }
-    public void setId(Long id) {
-      this.id = id;
-    }
-    public String getName() {
-      return name;
-    }
-    public void setName(String name) {
-      this.name = name;
-    }
-
-    @Override
-    public boolean equals(Object o) {
-      return o instanceof Person person &&
-          Objects.equals(id, person.id) &&
-          Objects.equals(name, person.name);
-    }
-
-    @Override
-    public int hashCode() {
-      return Objects.hash(id, name);
-    }
-
-    @Override
-    public String toString() {
-      return "Person{" +
-          "id=" + id +
-          ", name='" + name + '\'' +
-          '}';
-    }
-  }
-
-  @Nested
-  public class Q6 {
-    @Test @Tag("Q6")
-    public void testFindAllEmptyTable() throws SQLException {
-      var dataSource = new JdbcDataSource();
-      dataSource.setURL("jdbc:h2:mem:test");
-      ORM.transaction(dataSource, () -> {
-        ORM.createTable(Person.class);
-        interface PersonRepository extends Repository<Person, Long> {}
-        var repository = ORM.createRepository(PersonRepository.class);
-        var persons = repository.findAll();
-        assertEquals(List.of(), persons);
-      });
-    }
-
-    @Test @Tag("Q6")
-    public void testFindAllOutsideATransaction() {
-      var dataSource = new JdbcDataSource();
-      dataSource.setURL("jdbc:h2:mem:test");
-      interface PersonRepository extends Repository<Person, Long> {}
-      var repository = ORM.createRepository(PersonRepository.class);
-      assertThrows(IllegalStateException.class, repository::findAll);
-    }
-
-    @Test @Tag("Q6")
-    public void testEqualsHashCodeToStringNotSupported() throws SQLException {
-      interface PersonRepository extends Repository<Person, Long> { }
-      var dataSource = new JdbcDataSource();
-      dataSource.setURL("jdbc:h2:mem:test");
-      ORM.transaction(dataSource, () -> {
-        var repository = ORM.createRepository(PersonRepository.class);
-        assertAll(
-            () -> assertThrows(UnsupportedOperationException.class, () -> repository.equals(null)),
-            () -> assertThrows(UnsupportedOperationException.class, repository::hashCode),
-            () -> assertThrows(UnsupportedOperationException.class, repository::toString)
-        );
-      });
-    }
-
-    @Test @Tag("Q6")
-    public void testRepositoryNotInTransaction() throws SQLException {
-      interface WeirdRepository extends Repository<Person, Long> {
-        void weirdMethod(String name);
-      }
-
-      var dataSource = new JdbcDataSource();
-      dataSource.setURL("jdbc:h2:mem:test");
-      var repository = ORM.createRepository(WeirdRepository.class);
-      ORM.transaction(dataSource, () -> {
-        assertThrows(IllegalStateException.class, () -> repository.weirdMethod("weird"));
-      });
-    }
-
-    @Test @Tag("Q6")
-    public void testRepositoryNull() {
-      var dataSource = new JdbcDataSource();
-      dataSource.setURL("jdbc:h2:mem:test");
-      assertThrows(NullPointerException.class, () -> ORM.createRepository(null));
-    }
-  }
-
-  @Nested
-  public class Q7 {
-
-    @Test @Tag("Q7")
-    @SuppressWarnings("resource")
-    public void testToEntityClass() throws SQLException {
-      var dataSource = new JdbcDataSource();
-      dataSource.setURL("jdbc:h2:mem:test");
-      ORM.transaction(dataSource, () -> {
-        ORM.createTable(Person.class);
-        var connection = ORM.currentConnection();
-        var update = """
-          INSERT INTO PERSON (ID, NAME) VALUES (42, 'scott tiger');
-          """;
-        try(var statement = connection.createStatement()) {
-          statement.executeUpdate(update);
-        }
-        var query = """
-            SELECT * FROM PERSON;
-            """;
-        Object entity;
-        try(var statement = connection.createStatement()) {
-          var resultSet = statement.executeQuery(query);
-          assertTrue(resultSet.next());
-          var beanInfo = Utils.beanInfo(Person.class);
-          var constructor = Utils.defaultConstructor(Person.class);
-          entity = ORM.toEntityClass(resultSet, beanInfo, constructor);
-          assertFalse(resultSet.next());
-        }
-        assertEquals(new Person(42L, "scott tiger"), entity);
-      });
-    }
-
-    @Test @Tag("Q7")
-    @SuppressWarnings("resource")
-    public void testFindAll() throws SQLException {
-      var dataSource = new JdbcDataSource();
-      dataSource.setURL("jdbc:h2:mem:test");
-      ORM.transaction(dataSource, () -> {
-        ORM.createTable(Person.class);
-        var connection = ORM.currentConnection();
-        var update = """
-          INSERT INTO PERSON (ID, NAME) VALUES (1, 'john');
-          INSERT INTO PERSON (ID, NAME) VALUES (2, 'jane');
-          """;
-        try(var statement = connection.createStatement()) {
-          statement.executeUpdate(update);
-        }
-        var beanInfo = Utils.beanInfo(Person.class);
-        var constructor = Utils.defaultConstructor(Person.class);
-        var persons = ORM.findAll(connection, "SELECT * FROM PERSON", beanInfo, constructor);
-        assertEquals(List.of(
-                new Person(1L, "john"),
-                new Person(2L, "jane")),
-            persons);
-      });
-    }
-
-    @Test @Tag("Q7")
-    @SuppressWarnings("resource")
-    public void testFindAllPersons() throws SQLException {
-      interface PersonRepository extends Repository<Person, Long> {}
-
-      var dataSource = new JdbcDataSource();
-      dataSource.setURL("jdbc:h2:mem:test");
-      var repository = ORM.createRepository(PersonRepository.class);
-      ORM.transaction(dataSource, () -> {
-        ORM.createTable(Person.class);
-        var connection = ORM.currentConnection();
-        var update = """
-          INSERT INTO PERSON (ID, NAME) VALUES (1, 'iga');
-          INSERT INTO PERSON (ID, NAME) VALUES (2, 'biva');
-          """;
-        try(var statement = connection.createStatement()) {
-          statement.executeUpdate(update);
-        }
-
-        var persons = repository.findAll();
-        assertEquals(List.of(
-                new Person(1L, "iga"),
-                new Person(2L, "biva")),
-            persons);
-      });
-    }
-
-    @Test @Tag("Q7")
-    public void testRepositorySQLExceptionAreCorrectlyPropagated() {
-      interface Static {
-        @SuppressWarnings("unused")
-        @Table("weird!name")
-        class InvalidTableName {
-          private long id;
-
-          @Id
-          public long getId() {
+        public Long getId() {
             return id;
-          }
-          public void setId(long id) {
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        @Column("EMPLOYEE_COUNT")
+        public int getEmployeeCount() {
+            return employeeCount;
+        }
+    }
+
+    @Nested
+    public class Q4 {
+
+        @Test
+        @Tag("Q4")
+        @SuppressWarnings("resource")
+        public void testCreateTableCompany() throws SQLException {
+            record Column(String name, String typeName, int size, boolean isNullable, boolean isAutoIncrement) {
+            }
+            var dataSource = new JdbcDataSource();
+            dataSource.setURL("jdbc:h2:mem:test");
+            ORM.transaction(dataSource, () -> {
+                ORM.createTable(Company.class);
+                var set = new HashSet<Column>();
+                var connection = ORM.currentConnection();
+                var metaData = connection.getMetaData();
+                try (var resultSet = metaData.getColumns(null, null, "COMPANY", null)) {
+                    while (resultSet.next()) {
+                        var column = new Column(
+                                resultSet.getString(4),                 // COLUMN_NAME
+                                resultSet.getString(6),                 // TYPE_NAME
+                                resultSet.getInt(7),                    // COLUMN_SIZE
+                                resultSet.getString(18).equals("YES"),  // IS_NULLABLE
+                                resultSet.getString(23).equals("YES")   // IS_AUTOINCREMENT
+                        );
+                        set.add(column);
+                    }
+                }
+                assertEquals(Set.of(
+                        new Column("ID", "BIGINT", 19, true, false),
+                        new Column("NAME", "VARCHAR", 255, true, false),
+                        new Column("EMPLOYEE_COUNT", "INTEGER", 10, false, false)
+                ), set);
+            });
+        }
+    }
+
+
+    @SuppressWarnings("unused")
+    public static final class Point {
+        private Long id;
+        private int x;
+        private int y;
+
+        public Point() {
+        }  // for reflection
+
+        @Id  // primary key
+        @GeneratedValue  // auto_increment
+        public Long getId() {
+            return id;
+        }
+
+        public int getX() {
+            return x;
+        }
+
+        public int getY() {
+            return y;
+        }
+    }
+
+    @SuppressWarnings("unused")
+    @Table("User")
+    public static final class User {
+        private Long id;
+        private String name;
+        private int age;
+
+        public User() {
+        }  // for reflection
+
+        @Id  // primary key
+        @GeneratedValue  // auto_increment
+        public Long getId() {
+            return id;
+        }
+
+        public void setId(Long id) {
             this.id = id;
-          }
         }
-      }
-      interface SimpleRepository extends Repository<Static.InvalidTableName, Long> { }
 
-      var dataSource = new JdbcDataSource();
-      dataSource.setURL("jdbc:h2:mem:test");
-      var repository = ORM.createRepository(SimpleRepository.class);
-      assertThrows(SQLException.class, () -> ORM.transaction(dataSource, repository::findAll));
-    }
-  }
-  /*
-
-
-  @Nested
-  class Q8 {
-
-    @Test @Tag("Q8")
-    public void testCreateSaveQuery() {
-      var beanInfo = Utils.beanInfo(Person.class);
-      var sqlQuery = ORM.createSaveQuery("PERSON", beanInfo);
-      assertTrue(sqlQuery.endsWith("INTO PERSON (id, name) VALUES (?, ?);"));
-    }
-
-    @Test @Tag("Q8")
-    public void testSave() throws SQLException {
-      interface PersonRepository extends Repository<Person, Long> {}
-
-      var dataSource = new JdbcDataSource();
-      dataSource.setURL("jdbc:h2:mem:test");
-      var repository = ORM.createRepository(PersonRepository.class);
-      ORM.transaction(dataSource, () -> {
-        ORM.createTable(Person.class);
-        var connection = ORM.currentConnection();
-        var beanInfo = Utils.beanInfo(Person.class);
-        var bean = new Person(1L, "Ana");
-        ORM.save(connection, "PERSON", beanInfo, bean, null);
-        var all = repository.findAll();
-        assertEquals(List.of(new Person(1L, "Ana")), all);
-      });
-    }
-
-    @Test @Tag("Q8")
-    public void testSaveOnePerson() throws SQLException {
-      interface PersonRepository extends Repository<Person, Long> {}
-
-      var dataSource = new JdbcDataSource();
-      dataSource.setURL("jdbc:h2:mem:test");
-      var repository = ORM.createRepository(PersonRepository.class);
-      ORM.transaction(dataSource, () -> {
-        ORM.createTable(Person.class);
-        repository.save(new Person(1L, "Bob"));
-        var all = repository.findAll();
-        assertEquals(List.of(new Person(1L, "Bob")), all);
-      });
-    }
-
-    @Test @Tag("Q8")
-    public void testSaveSeveralPersons() throws SQLException {
-      interface PersonRepository extends Repository<Person, Long> {}
-
-      var dataSource = new JdbcDataSource();
-      dataSource.setURL("jdbc:h2:mem:test");
-      var repository = ORM.createRepository(PersonRepository.class);
-      ORM.transaction(dataSource, () -> {
-        ORM.createTable(Person.class);
-        LongStream.range(0, 5)
-            .mapToObj(i -> new Person(i, "person" + i))
-            .forEach(repository::save);
-
-        var id = 0L;
-        for(var person: repository.findAll()) {
-          assertEquals(person.getId(), id);
-          assertEquals(person.getName(), "person" + id);
-          id++;
+        public String getName() {
+            return name;
         }
-      });
+
+        public void setName(String name) {
+            this.name = name;
+        }
+
+        public int getAge() {
+            return age;
+        }
+
+        public void setAge(int age) {
+            this.age = age;
+        }
     }
 
-  }
+    @Nested
+    public class Q5 {
 
+        @Test
+        @Tag("Q5")
+        @SuppressWarnings("resource")
+        public void testCreateTablePoint() throws SQLException {
+            record Column(String name, String typeName, int size, boolean isNullable, boolean isAutoIncrement) {
+            }
+            var dataSource = new JdbcDataSource();
+            dataSource.setURL("jdbc:h2:mem:test");
+            ORM.transaction(dataSource, () -> {
+                ORM.createTable(Point.class);
+                var set = new HashSet<Column>();
+                var connection = ORM.currentConnection();
+                var metaData = connection.getMetaData();
+                try (var resultSet = metaData.getColumns(null, null, "POINT", null)) {
+                    while (resultSet.next()) {
+                        var column = new Column(
+                                resultSet.getString(4),                 // COLUMN_NAME
+                                resultSet.getString(6),                 // TYPE_NAME
+                                resultSet.getInt(7),                    // COLUMN_SIZE
+                                resultSet.getString(18).equals("YES"),  // IS_NULLABLE
+                                resultSet.getString(23).equals("YES")   // IS_AUTOINCREMENT
+                        );
+                        set.add(column);
+                    }
+                }
+                assertEquals(Set.of(
+                        new Column("ID", "BIGINT", 19, false, true),
+                        new Column("X", "INTEGER", 10, false, false),
+                        new Column("Y", "INTEGER", 10, false, false)
+                ), set);
+            });
+        }
 
-  @SuppressWarnings("unused")
-  public static class Data {
-    private String id;
+        @Test
+        @Tag("Q5")
+        @SuppressWarnings("resource")
+        public void testCreateTableUser() throws SQLException {
+            record Column(String name, String typeName, int size, boolean isNullable, boolean isAutoIncrement) {
+            }
+            var dataSource = new JdbcDataSource();
+            dataSource.setURL("jdbc:h2:mem:test");
+            ORM.transaction(dataSource, () -> {
+                ORM.createTable(User.class);
+                var set = new HashSet<Column>();
+                var connection = ORM.currentConnection();
+                var metaData = connection.getMetaData();
+                try (var resultSet = metaData.getColumns(null, null, "USER", null)) {
+                    while (resultSet.next()) {
+                        var column = new Column(
+                                resultSet.getString(4),                 // COLUMN_NAME
+                                resultSet.getString(6),                 // TYPE_NAME
+                                resultSet.getInt(7),                    // COLUMN_SIZE
+                                resultSet.getString(18).equals("YES"),  // IS_NULLABLE
+                                resultSet.getString(23).equals("YES")   // IS_AUTOINCREMENT
+                        );
+                        set.add(column);
+                    }
+                }
+                assertEquals(Set.of(
+                        new Column("ID", "BIGINT", 19, false, true),
+                        new Column("AGE", "INTEGER", 10, false, false),
+                        new Column("NAME", "VARCHAR", 255, true, false)
+                ), set);
+            });
+        }
 
-    @Id
-    @GeneratedValue
-    public String getId() {
-      return id;
+        @SuppressWarnings("unused")
+        @Table("USER2")
+        static final class AnotherUser {
+            private Long id;
+
+            public AnotherUser() {
+            }
+
+            @Id
+            @Column("key")
+            public Long getId() {
+                return id;
+            }
+
+            public void setId(Long id) {
+                this.id = id;
+            }
+        }
+
+        @Test
+        @Tag("Q5")
+        @SuppressWarnings("resource")
+        public void testCreateTableWithColumnNameRenamed() throws SQLException {
+            record Column(String name, String typeName, int size, boolean isNullable, boolean isAutoIncrement) {
+            }
+            var dataSource = new JdbcDataSource();
+            dataSource.setURL("jdbc:h2:mem:test");
+            ORM.transaction(dataSource, () -> {
+                ORM.createTable(AnotherUser.class);
+                var set = new HashSet<Column>();
+                var connection = ORM.currentConnection();
+                var metaData = connection.getMetaData();
+                try (var resultSet = metaData.getColumns(null, null, "USER2", null)) {
+                    while (resultSet.next()) {
+                        var column = new Column(
+                                resultSet.getString(4),                 // COLUMN_NAME
+                                resultSet.getString(6),                 // TYPE_NAME
+                                resultSet.getInt(7),                    // COLUMN_SIZE
+                                resultSet.getString(18).equals("YES"),  // IS_NULLABLE
+                                resultSet.getString(23).equals("YES")   // IS_AUTOINCREMENT
+                        );
+                        set.add(column);
+                    }
+                }
+                assertEquals(Set.of(
+                        new Column("KEY", "BIGINT", 19, false, false)
+                ), set);
+            });
+        }
     }
 
-    public void setId(String id) {
-      this.id = id;
-    }
-  }
 
+    @SuppressWarnings("unused")
+    public static final class Person {
+        private Long id;
+        private String name;
+
+        public Person() {
+        }
+
+        public Person(Long id, String name) {
+            this.id = id;
+            this.name = name;
+        }
+
+        @Id
+        public Long getId() {
+            return id;
+        }
+
+        public void setId(Long id) {
+            this.id = id;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(String name) {
+            this.name = name;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            return o instanceof Person person &&
+                    Objects.equals(id, person.id) &&
+                    Objects.equals(name, person.name);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(id, name);
+        }
+
+        @Override
+        public String toString() {
+            return "Person{" +
+                    "id=" + id +
+                    ", name='" + name + '\'' +
+                    '}';
+        }
+    }
+
+    @Nested
+    public class Q6 {
+        @Test
+        @Tag("Q6")
+        public void testFindAllEmptyTable() throws SQLException {
+            var dataSource = new JdbcDataSource();
+            dataSource.setURL("jdbc:h2:mem:test");
+            ORM.transaction(dataSource, () -> {
+                ORM.createTable(Person.class);
+                interface PersonRepository extends Repository<Person, Long> {
+                }
+                var repository = ORM.createRepository(PersonRepository.class);
+                var persons = repository.findAll();
+                assertEquals(List.of(), persons);
+            });
+        }
+
+        @Test
+        @Tag("Q6")
+        public void testFindAllOutsideATransaction() {
+            var dataSource = new JdbcDataSource();
+            dataSource.setURL("jdbc:h2:mem:test");
+            interface PersonRepository extends Repository<Person, Long> {
+            }
+            var repository = ORM.createRepository(PersonRepository.class);
+            assertThrows(IllegalStateException.class, repository::findAll);
+        }
+
+        @Test
+        @Tag("Q6")
+        public void testEqualsHashCodeToStringNotSupported() throws SQLException {
+            interface PersonRepository extends Repository<Person, Long> {
+            }
+            var dataSource = new JdbcDataSource();
+            dataSource.setURL("jdbc:h2:mem:test");
+            ORM.transaction(dataSource, () -> {
+                var repository = ORM.createRepository(PersonRepository.class);
+                assertAll(
+                        () -> assertThrows(UnsupportedOperationException.class, () -> repository.equals(null)),
+                        () -> assertThrows(UnsupportedOperationException.class, repository::hashCode),
+                        () -> assertThrows(UnsupportedOperationException.class, repository::toString)
+                );
+            });
+        }
+
+        @Test
+        @Tag("Q6")
+        public void testRepositoryNotInTransaction() throws SQLException {
+            interface WeirdRepository extends Repository<Person, Long> {
+                void weirdMethod(String name);
+            }
+
+            var dataSource = new JdbcDataSource();
+            dataSource.setURL("jdbc:h2:mem:test");
+            var repository = ORM.createRepository(WeirdRepository.class);
+            ORM.transaction(dataSource, () -> {
+                assertThrows(IllegalStateException.class, () -> repository.weirdMethod("weird"));
+            });
+        }
+
+        @Test
+        @Tag("Q6")
+        public void testRepositoryNull() {
+            var dataSource = new JdbcDataSource();
+            dataSource.setURL("jdbc:h2:mem:test");
+            assertThrows(NullPointerException.class, () -> ORM.createRepository(null));
+        }
+    }
+
+    @Nested
+    public class Q7 {
+
+        @Test
+        @Tag("Q7")
+        @SuppressWarnings("resource")
+        public void testToEntityClass() throws SQLException {
+            var dataSource = new JdbcDataSource();
+            dataSource.setURL("jdbc:h2:mem:test");
+            ORM.transaction(dataSource, () -> {
+                ORM.createTable(Person.class);
+                var connection = ORM.currentConnection();
+                var update = """
+                        INSERT INTO PERSON (ID, NAME) VALUES (42, 'scott tiger');
+                        """;
+                try (var statement = connection.createStatement()) {
+                    statement.executeUpdate(update);
+                }
+                var query = """
+                        SELECT * FROM PERSON;
+                        """;
+                Object entity;
+                try (var statement = connection.createStatement()) {
+                    var resultSet = statement.executeQuery(query);
+                    assertTrue(resultSet.next());
+                    var beanInfo = Utils.beanInfo(Person.class);
+                    var constructor = Utils.defaultConstructor(Person.class);
+                    entity = ORM.toEntityClass(resultSet, beanInfo, constructor);
+                    assertFalse(resultSet.next());
+                }
+                assertEquals(new Person(42L, "scott tiger"), entity);
+            });
+        }
+
+        @Test
+        @Tag("Q7")
+        @SuppressWarnings("resource")
+        public void testFindAll() throws SQLException {
+            var dataSource = new JdbcDataSource();
+            dataSource.setURL("jdbc:h2:mem:test");
+            ORM.transaction(dataSource, () -> {
+                ORM.createTable(Person.class);
+                var connection = ORM.currentConnection();
+                var update = """
+                        INSERT INTO PERSON (ID, NAME) VALUES (1, 'john');
+                        INSERT INTO PERSON (ID, NAME) VALUES (2, 'jane');
+                        """;
+                try (var statement = connection.createStatement()) {
+                    statement.executeUpdate(update);
+                }
+                var beanInfo = Utils.beanInfo(Person.class);
+                var constructor = Utils.defaultConstructor(Person.class);
+                var persons = ORM.findAll(connection, "SELECT * FROM PERSON", beanInfo, constructor);
+                assertEquals(List.of(
+                                new Person(1L, "john"),
+                                new Person(2L, "jane")),
+                        persons);
+            });
+        }
+
+        @Test
+        @Tag("Q7")
+        @SuppressWarnings("resource")
+        public void testFindAllPersons() throws SQLException {
+            interface PersonRepository extends Repository<Person, Long> {
+            }
+
+            var dataSource = new JdbcDataSource();
+            dataSource.setURL("jdbc:h2:mem:test");
+            var repository = ORM.createRepository(PersonRepository.class);
+            ORM.transaction(dataSource, () -> {
+                ORM.createTable(Person.class);
+                var connection = ORM.currentConnection();
+                var update = """
+                        INSERT INTO PERSON (ID, NAME) VALUES (1, 'iga');
+                        INSERT INTO PERSON (ID, NAME) VALUES (2, 'biva');
+                        """;
+                try (var statement = connection.createStatement()) {
+                    statement.executeUpdate(update);
+                }
+
+                var persons = repository.findAll();
+                assertEquals(List.of(
+                                new Person(1L, "iga"),
+                                new Person(2L, "biva")),
+                        persons);
+            });
+        }
+
+        @Test
+        @Tag("Q7")
+        public void testRepositorySQLExceptionAreCorrectlyPropagated() {
+            interface Static {
+                @SuppressWarnings("unused")
+                @Table("weird!name")
+                class InvalidTableName {
+                    private long id;
+
+                    @Id
+                    public long getId() {
+                        return id;
+                    }
+
+                    public void setId(long id) {
+                        this.id = id;
+                    }
+                }
+            }
+            interface SimpleRepository extends Repository<Static.InvalidTableName, Long> {
+            }
+
+            var dataSource = new JdbcDataSource();
+            dataSource.setURL("jdbc:h2:mem:test");
+            var repository = ORM.createRepository(SimpleRepository.class);
+            assertThrows(SQLException.class, () -> ORM.transaction(dataSource, repository::findAll));
+        }
+    }
+
+
+    @Nested
+    class Q8 {
+
+        @Test
+        @Tag("Q8")
+        public void testCreateSaveQuery() {
+            var beanInfo = Utils.beanInfo(Person.class);
+            var sqlQuery = ORM.createSaveQuery("PERSON", beanInfo);
+            assertTrue(sqlQuery.endsWith("INTO PERSON (id, name) VALUES (?, ?);"));
+        }
+
+        @Test
+        @Tag("Q8")
+        public void testSave() throws SQLException {
+            interface PersonRepository extends Repository<Person, Long> {
+            }
+
+            var dataSource = new JdbcDataSource();
+            dataSource.setURL("jdbc:h2:mem:test");
+            var repository = ORM.createRepository(PersonRepository.class);
+            ORM.transaction(dataSource, () -> {
+                ORM.createTable(Person.class);
+                var connection = ORM.currentConnection();
+                var beanInfo = Utils.beanInfo(Person.class);
+                var bean = new Person(1L, "Ana");
+                ORM.save(connection, "PERSON", beanInfo, bean, null);
+                var all = repository.findAll();
+                assertEquals(List.of(new Person(1L, "Ana")), all);
+            });
+        }
+
+        @Test
+        @Tag("Q8")
+        public void testSaveOnePerson() throws SQLException {
+            interface PersonRepository extends Repository<Person, Long> {
+            }
+
+            var dataSource = new JdbcDataSource();
+            dataSource.setURL("jdbc:h2:mem:test");
+            var repository = ORM.createRepository(PersonRepository.class);
+            ORM.transaction(dataSource, () -> {
+                ORM.createTable(Person.class);
+                repository.save(new Person(1L, "Bob"));
+                var all = repository.findAll();
+                assertEquals(List.of(new Person(1L, "Bob")), all);
+            });
+        }
+
+        @Test
+        @Tag("Q8")
+        public void testSaveSeveralPersons() throws SQLException {
+            interface PersonRepository extends Repository<Person, Long> {
+            }
+
+            var dataSource = new JdbcDataSource();
+            dataSource.setURL("jdbc:h2:mem:test");
+            var repository = ORM.createRepository(PersonRepository.class);
+            ORM.transaction(dataSource, () -> {
+                ORM.createTable(Person.class);
+                LongStream.range(0, 5)
+                        .mapToObj(i -> new Person(i, "person" + i))
+                        .forEach(repository::save);
+
+                var id = 0L;
+                for (var person : repository.findAll()) {
+                    assertEquals(person.getId(), id);
+                    assertEquals(person.getName(), "person" + id);
+                    id++;
+                }
+            });
+        }
+
+    }
+
+
+    @SuppressWarnings("unused")
+    public static class Data {
+        private String id;
+
+        @Id
+        @GeneratedValue
+        public String getId() {
+            return id;
+        }
+
+        public void setId(String id) {
+            this.id = id;
+        }
+    }
+
+/*
   @Nested
   class Q9 {
 
