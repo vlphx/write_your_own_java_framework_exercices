@@ -8,10 +8,7 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Proxy;
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.SQLException;
+import java.sql.*;
 import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -83,7 +80,8 @@ public final class ORM {
                 connection.rollback();
                 throw e;
             } catch (UncheckedSQLException error) {
-                throw new SQLException(error);
+                connection.rollback();
+                throw error.getCause();
             } finally {
                 CONNECTION_THREAD_LOCAL.remove();
             }
@@ -169,26 +167,43 @@ public final class ORM {
 
     public static String createSaveQuery(String tableName, BeanInfo beanInfo) {
         var properties = beanInfo.getPropertyDescriptors();
-        var columns = Arrays.stream(properties)
-                .filter(property -> !property.getName().equals("class"))
-                .map(ORM::findColumnName)
-                .map(columnName -> columnName.toLowerCase(Locale.ROOT))
-                .collect(Collectors.joining(", "));
-        var values = Arrays.stream(properties)
-                .filter(property -> !property.getName().equals("class"))
-                .map(property -> "?")
-                .collect(Collectors.joining(", "));
-        return "INSERT INTO " + tableName + " (" + columns + ") VALUES (" + values + ");";
+        return """
+                INSERT INTO %s %s VALUES (%s);"""
+                .formatted(
+                        tableName,
+                        Arrays
+                                .stream(properties)
+                                .filter(property -> !property.getName().equals("class"))
+                                .map(ORM::findColumnName)
+                                .map(columnName -> columnName.toLowerCase(Locale.ROOT))
+                                .collect(Collectors.joining(", ", "(", ")")),
+                        String.join(", ",
+                                Collections.nCopies(properties.length - 1, "?"))
+
+                );
     }
 
-    public static <T> T save(Connection connection, String tableName, BeanInfo beanInfo, T bean, String idProperty) throws SQLException {
+    static PropertyDescriptor findId(BeanInfo beanInfo) {
+        Objects.requireNonNull(beanInfo);
+        var propertyIds = Arrays.stream(beanInfo.getPropertyDescriptors())
+                .filter(ORM::isAnnotatedId)
+                .toList();
+        return switch (propertyIds.size()) {
+            case 0 -> throw new IllegalStateException(" no @Id defined on any getters");
+            case 1 -> propertyIds.getFirst();
+            default -> throw new IllegalStateException(" too many @Id defined on getters");
+        };
+    }
+
+    public static <T> T save(Connection connection, String tableName, BeanInfo beanInfo, T bean, PropertyDescriptor idProperty) throws SQLException {
         Objects.requireNonNull(connection);
         Objects.requireNonNull(tableName);
         Objects.requireNonNull(beanInfo);
+//        Objects.requireNonNull(idProperty);
 
         var saveQuery = createSaveQuery(tableName, beanInfo);
-        int parameterIndex = 1;
-        try (var statement = connection.prepareStatement(saveQuery)) {
+        int columnIndex = 1;
+        try (var statement = connection.prepareStatement(saveQuery, Statement.RETURN_GENERATED_KEYS)) {
             var properties = beanInfo.getPropertyDescriptors();
             for (var property : properties) {
                 var name = property.getName();
@@ -197,9 +212,18 @@ public final class ORM {
                 }
                 var getter = property.getReadMethod();
                 var argument = Utils.invokeMethod(bean, getter);
-                statement.setObject(parameterIndex++, argument);
+                statement.setObject(columnIndex++, argument); // columnIndex value is used as argument for setObject method AND THEN it is incremented
             }
             statement.executeUpdate();
+            if (idProperty != null) {
+                try (var resultSet = statement.getGeneratedKeys()) {
+                    if (resultSet.next()) {
+                        var idValue = resultSet.getObject(1);
+                        var idSetter = idProperty.getWriteMethod();
+                        Utils.invokeMethod(bean, idSetter, idValue);
+                    }
+                }
+            }
         }
         connection.commit();
         return bean;
@@ -207,6 +231,12 @@ public final class ORM {
 
     public static <T extends Repository<?, ?>> T createRepository(Class<T> repositoryClass) {
         var beanType = findBeanTypeFromRepository(repositoryClass);
+        var tableName = findTableName(beanType);
+
+        var beanInfo = Utils.beanInfo(beanType);
+        var sqlQuery = "SELECT * FROM " + tableName;
+        var constructor = Utils.defaultConstructor(beanType);
+        var idProperty = findId(beanInfo);
         return repositoryClass.cast(
                 Proxy.newProxyInstance(
                         repositoryClass.getClassLoader(),
@@ -214,9 +244,8 @@ public final class ORM {
                         (Object proxy, Method method, Object[] args) -> {
                             try {
                                 return switch (method.getName()) {
-                                    case "save" ->
-                                            save(currentConnection(), findTableName(beanType), Utils.beanInfo(beanType), args[0], null);
-                                    case "findAll" -> findAll(beanType);
+                                    case "save" -> save(currentConnection(), tableName, beanInfo, args[0], idProperty);
+                                    case "findAll" -> findAll(currentConnection(), sqlQuery, beanInfo, constructor);
                                     case "hashCode", "equals", "toString" ->
                                             throw new UnsupportedOperationException("Method: " + method + " not supported");
                                     default -> throw new IllegalStateException("Method: " + method + " not supported");
@@ -229,7 +258,7 @@ public final class ORM {
         );
     }
 
-    public static <T> T toEntityClass(ResultSet resultSet, BeanInfo beanInfo, Constructor<T> constructor) throws SQLException {
+    static <T> T toEntityClass(ResultSet resultSet, BeanInfo beanInfo, Constructor<T> constructor) throws SQLException {
         Objects.requireNonNull(resultSet);
         Objects.requireNonNull(beanInfo);
         Objects.requireNonNull(constructor);
@@ -243,24 +272,10 @@ public final class ORM {
                 continue;
             }
             var setter = property.getWriteMethod();
-            var argument = resultSet.getObject(name);
+            var argument = resultSet.getObject(name); // One line in result set corresponds to one object representing a row in the table
             Utils.invokeMethod(newInstance, setter, argument);
         }
         return newInstance;
-    }
-
-    private static List<?> findAll(Class<?> beanType) throws SQLException {
-        Objects.requireNonNull(beanType);
-
-        var connection = currentConnection();
-
-        var tableName = findTableName(beanType);
-        var sqlQuery = "SELECT * FROM " + tableName;
-
-        var constructor = Utils.defaultConstructor(beanType);
-        var beanInfo = Utils.beanInfo(beanType);
-
-        return findAll(connection, sqlQuery, beanInfo, constructor);
     }
 
     public static <T> List<T> findAll(Connection connection, String sqlQuery, BeanInfo beanInfo, Constructor<? extends T> constructor) throws SQLException {
