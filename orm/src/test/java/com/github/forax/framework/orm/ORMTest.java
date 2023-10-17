@@ -1130,219 +1130,232 @@ public class ORMTest {
         }
     }
 
-/*
-  @Nested
-  public class Q12 {
 
-    @Test @Tag("Q12")
-    public void testUserDefinedQueryAccount() throws SQLException {
-      interface PersonRepository extends Repository<Account, Integer> {
-        @Query("SELECT * FROM ACCOUNT")
-        List<Account> findAllAccount();
-      }
+    @Nested
+    public class Q12 {
 
-      var dataSource = new JdbcDataSource();
-      dataSource.setURL("jdbc:h2:mem:test");
-      var repository = ORM.createRepository(PersonRepository.class);
-      ORM.transaction(dataSource, () -> {
-        ORM.createTable(Account.class);
-        repository.save(new Account(1, 123));
-        repository.save(new Account(2, 567));
-        var list = repository.findAllAccount();
-        assertAll(
-            () -> assertEquals(List.of(1, 2), list.stream().map(Account::getId).toList()),
-            () -> assertEquals(List.of(123L, 567L), list.stream().map(Account::getBalance).toList())
-        );
-      });
-    }
+        @Test
+        @Tag("Q12")
+        public void testUserDefinedQueryAccount() throws SQLException {
+            interface PersonRepository extends Repository<Account, Integer> {
+                @Query("SELECT * FROM ACCOUNT")
+                List<Account> findAllAccount();
+            }
 
-    @Test @Tag("Q12")
-    public void testUserDefinedQueryPerson() throws SQLException {
-      interface PersonRepository extends Repository<Person, Long> {
-        @Query("SELECT * FROM PERSON WHERE name = ?")
-        List<Person> findAllUsingAName(String name);
-      }
-
-      var dataSource = new JdbcDataSource();
-      dataSource.setURL("jdbc:h2:mem:test");
-      var repository = ORM.createRepository(PersonRepository.class);
-      ORM.transaction(dataSource, () -> {
-        ORM.createTable(Person.class);
-        repository.save(new Person(1L, "Bob"));
-        repository.save(new Person(2L, "Ana"));
-        repository.save(new Person(3L, "John"));
-        repository.save(new Person(4L, "Bob"));
-        var list = repository.findAllUsingAName("Bob");
-        assertEquals(List.of(1L, 4L), list.stream().map(Person::getId).toList());
-      });
-    }
-
-    @Test @Tag("Q12")
-    public void testQuerySeveralParameters() throws SQLException {
-      interface UserRepository extends Repository<Pet, Long> {
-        @Query("SELECT * FROM PET WHERE name = ? AND age >= ?")
-        List<Pet> findAllWithANameGreaterThanAge(String name, int age);
-      }
-
-      var dataSource = new JdbcDataSource();
-      dataSource.setURL("jdbc:h2:mem:test");
-      var repository = ORM.createRepository(UserRepository.class);
-      ORM.transaction(dataSource, () -> {
-        ORM.createTable(Pet.class);
-        repository.save(new Pet(1L, "Scooby", 50));
-        repository.save(new Pet(2L, "Scrappy", 35));
-        repository.save(new Pet(3L, "Scooby", 12));
-        repository.save(new Pet(4L, "Garfield", 20));
-        var list = repository.findAllWithANameGreaterThanAge("Scooby", 10);
-        assertEquals(List.of(
-            new Pet(1L, "Scooby", 50),
-            new Pet(3L, "Scooby", 12)
-        ), list);
-      });
-    }
-
-  }
-
-
-  @Nested
-  class Q13 {
-
-    @Test @Tag("Q13")
-    public void testFindPropertyBalance() {
-      var beanInfo = Utils.beanInfo(Account.class);
-      var property = ORM.findProperty(beanInfo, "balance");
-      assertEquals("balance", property.getName());
-    }
-
-    @Test @Tag("Q13")
-    public void testFindPropertyId() {
-      var beanInfo = Utils.beanInfo(Account.class);
-      var property = ORM.findProperty(beanInfo, "id");
-      assertEquals("id", property.getName());
-    }
-
-    @Test @Tag("Q13")
-    public void testFindNoProperty() {
-      var beanInfo = Utils.beanInfo(Account.class);
-      assertThrows(IllegalStateException.class, () ->  ORM.findProperty(beanInfo, "noproperty"));
-    }
-
-    @Test @Tag("Q13")
-    public void testFindByBalance() throws SQLException {
-      interface PersonRepository extends Repository<Account, Integer> {
-        Optional<Account> findByBalance(String name);
-      }
-
-      var dataSource = new JdbcDataSource();
-      dataSource.setURL("jdbc:h2:mem:test");
-      var repository = ORM.createRepository(PersonRepository.class);
-      ORM.transaction(dataSource, () -> {
-        ORM.createTable(Account.class);
-        repository.save(new Account(1, 123));
-        repository.save(new Account(2, 567));
-        var account = repository.findByBalance("123").orElseThrow();
-        assertEquals(1, account.getId());
-      });
-    }
-
-    @Test @Tag("Q13")
-    public void testFindByName() throws SQLException {
-      interface PersonRepository extends Repository<Person, Long> {
-        Optional<Person> findByName(String name);
-      }
-
-      var dataSource = new JdbcDataSource();
-      dataSource.setURL("jdbc:h2:mem:test");
-      var repository = ORM.createRepository(PersonRepository.class);
-      ORM.transaction(dataSource, () -> {
-        ORM.createTable(Person.class);
-        repository.save(new Person(1L, "iga"));
-        repository.save(new Person(2L, "biva"));
-        var person = repository.findByName("biva").orElseThrow();
-        assertEquals(new Person(2L, "biva"), person);
-      });
-    }
-
-    @SuppressWarnings("unused")
-    static final class Country {
-      private Long id;
-      private String name;
-
-      public Country() {}
-      public Country(String name) {
-        this.name = name;
-      }
-
-      @Id
-      @GeneratedValue
-      public Long getId() {
-        return id;
-      }
-      public void setId(Long id) {
-        this.id = id;
-      }
-
-      public String getName() {
-        return name;
-      }
-      public void setName(String name) {
-        this.name = name;
-      }
-
-      @Override
-      public boolean equals(Object o) {
-        return o instanceof Country country &&
-            Objects.equals(id, country.id) &&
-            Objects.equals(name, country.name);
-      }
-      @Override
-      public int hashCode() {
-        return Objects.hash(id, name);
-      }
-
-      @Override
-      public String toString() {
-        return "Country { id=" + id + ", name='" + name + "'}";
-      }
-    }
-
-    @Test @Tag("Q13")
-    public void testExample() throws SQLException {
-      interface CountryRepository extends Repository<Country, Long> {
-        @Query("SELECT * FROM COUNTRY WHERE NAME LIKE ?")
-        List<Country> findAllWithNameLike(String name);
-
-        Optional<Country> findByName(String name);
-      }
-
-      var dataSource = new JdbcDataSource();
-      dataSource.setURL("jdbc:h2:mem:test");
-      var repository = ORM.createRepository(CountryRepository.class);
-      ORM.transaction(dataSource, () -> {
-        ORM.createTable(Country.class);
-        repository.save(new Country("France"));
-        repository.save(new Country("Spain"));
-        repository.save(new Country("Australia"));
-        repository.save(new Country("Austria"));
-
-        assertAll(
-            () -> {
-              var list = repository.findAll();
-              assertEquals(List.of("France", "Spain", "Australia", "Austria"), list.stream().map(Country::getName).toList());
-            },() -> {
-              var list = repository.findAllWithNameLike("Aus%");
-              assertEquals(List.of("Australia", "Austria"), list.stream().map(Country::getName).toList());
-            }, () -> {
-              var country = repository.findByName("Spain").orElseThrow();
-              assertEquals("Spain", country.name);
-            }, () -> {
-              var country = repository.findByName("France").orElseThrow();
-              var country2 = repository.findById(country.id).orElseThrow();
-              assertEquals(country2, country);
+            var dataSource = new JdbcDataSource();
+            dataSource.setURL("jdbc:h2:mem:test");
+            var repository = ORM.createRepository(PersonRepository.class);
+            ORM.transaction(dataSource, () -> {
+                ORM.createTable(Account.class);
+                repository.save(new Account(1, 123));
+                repository.save(new Account(2, 567));
+                var list = repository.findAllAccount();
+                assertAll(
+                        () -> assertEquals(List.of(1, 2), list.stream().map(Account::getId).toList()),
+                        () -> assertEquals(List.of(123L, 567L), list.stream().map(Account::getBalance).toList())
+                );
             });
-      });
+        }
+
+        @Test
+        @Tag("Q12")
+        public void testUserDefinedQueryPerson() throws SQLException {
+            interface PersonRepository extends Repository<Person, Long> {
+                @Query("SELECT * FROM PERSON WHERE name = ?")
+                List<Person> findAllUsingAName(String name);
+            }
+
+            var dataSource = new JdbcDataSource();
+            dataSource.setURL("jdbc:h2:mem:test");
+            var repository = ORM.createRepository(PersonRepository.class);
+            ORM.transaction(dataSource, () -> {
+                ORM.createTable(Person.class);
+                repository.save(new Person(1L, "Bob"));
+                repository.save(new Person(2L, "Ana"));
+                repository.save(new Person(3L, "John"));
+                repository.save(new Person(4L, "Bob"));
+                var list = repository.findAllUsingAName("Bob");
+                assertEquals(List.of(1L, 4L), list.stream().map(Person::getId).toList());
+            });
+        }
+
+        @Test
+        @Tag("Q12")
+        public void testQuerySeveralParameters() throws SQLException {
+            interface UserRepository extends Repository<Pet, Long> {
+                @Query("SELECT * FROM PET WHERE name = ? AND age >= ?")
+                List<Pet> findAllWithANameGreaterThanAge(String name, int age);
+            }
+
+            var dataSource = new JdbcDataSource();
+            dataSource.setURL("jdbc:h2:mem:test");
+            var repository = ORM.createRepository(UserRepository.class);
+            ORM.transaction(dataSource, () -> {
+                ORM.createTable(Pet.class);
+                repository.save(new Pet(1L, "Scooby", 50));
+                repository.save(new Pet(2L, "Scrappy", 35));
+                repository.save(new Pet(3L, "Scooby", 12));
+                repository.save(new Pet(4L, "Garfield", 20));
+                var list = repository.findAllWithANameGreaterThanAge("Scooby", 10);
+                assertEquals(List.of(
+                        new Pet(1L, "Scooby", 50),
+                        new Pet(3L, "Scooby", 12)
+                ), list);
+            });
+        }
+
     }
 
-  }
-  */
+
+    @Nested
+    class Q13 {
+
+        @Test
+        @Tag("Q13")
+        public void testFindPropertyBalance() {
+            var beanInfo = Utils.beanInfo(Account.class);
+            var property = ORM.findProperty(beanInfo, "balance");
+            assertEquals("balance", property.getName());
+        }
+
+        @Test
+        @Tag("Q13")
+        public void testFindPropertyId() {
+            var beanInfo = Utils.beanInfo(Account.class);
+            var property = ORM.findProperty(beanInfo, "id");
+            assertEquals("id", property.getName());
+        }
+
+        @Test
+        @Tag("Q13")
+        public void testFindNoProperty() {
+            var beanInfo = Utils.beanInfo(Account.class);
+            assertThrows(IllegalStateException.class, () -> ORM.findProperty(beanInfo, "noproperty"));
+        }
+
+        @Test
+        @Tag("Q13")
+        public void testFindByBalance() throws SQLException {
+            interface PersonRepository extends Repository<Account, Integer> {
+                Optional<Account> findByBalance(String name);
+            }
+
+            var dataSource = new JdbcDataSource();
+            dataSource.setURL("jdbc:h2:mem:test");
+            var repository = ORM.createRepository(PersonRepository.class);
+            ORM.transaction(dataSource, () -> {
+                ORM.createTable(Account.class);
+                repository.save(new Account(1, 123));
+                repository.save(new Account(2, 567));
+                var account = repository.findByBalance("123").orElseThrow();
+                assertEquals(1, account.getId());
+            });
+        }
+
+        @Test
+        @Tag("Q13")
+        public void testFindByName() throws SQLException {
+            interface PersonRepository extends Repository<Person, Long> {
+                Optional<Person> findByName(String name);
+            }
+
+            var dataSource = new JdbcDataSource();
+            dataSource.setURL("jdbc:h2:mem:test");
+            var repository = ORM.createRepository(PersonRepository.class);
+            ORM.transaction(dataSource, () -> {
+                ORM.createTable(Person.class);
+                repository.save(new Person(1L, "iga"));
+                repository.save(new Person(2L, "biva"));
+                var person = repository.findByName("biva").orElseThrow();
+                assertEquals(new Person(2L, "biva"), person);
+            });
+        }
+
+        @SuppressWarnings("unused")
+        static final class Country {
+            private Long id;
+            private String name;
+
+            public Country() {
+            }
+
+            public Country(String name) {
+                this.name = name;
+            }
+
+            @Id
+            @GeneratedValue
+            public Long getId() {
+                return id;
+            }
+
+            public void setId(Long id) {
+                this.id = id;
+            }
+
+            public String getName() {
+                return name;
+            }
+
+            public void setName(String name) {
+                this.name = name;
+            }
+
+            @Override
+            public boolean equals(Object o) {
+                return o instanceof Country country &&
+                        Objects.equals(id, country.id) &&
+                        Objects.equals(name, country.name);
+            }
+
+            @Override
+            public int hashCode() {
+                return Objects.hash(id, name);
+            }
+
+            @Override
+            public String toString() {
+                return "Country { id=" + id + ", name='" + name + "'}";
+            }
+        }
+
+        @Test
+        @Tag("Q13")
+        public void testExample() throws SQLException {
+            interface CountryRepository extends Repository<Country, Long> {
+                @Query("SELECT * FROM COUNTRY WHERE NAME LIKE ?")
+                List<Country> findAllWithNameLike(String name);
+
+                Optional<Country> findByName(String name);
+            }
+
+            var dataSource = new JdbcDataSource();
+            dataSource.setURL("jdbc:h2:mem:test");
+            var repository = ORM.createRepository(CountryRepository.class);
+            ORM.transaction(dataSource, () -> {
+                ORM.createTable(Country.class);
+                repository.save(new Country("France"));
+                repository.save(new Country("Spain"));
+                repository.save(new Country("Australia"));
+                repository.save(new Country("Austria"));
+
+                assertAll(
+                        () -> {
+                            var list = repository.findAll();
+                            assertEquals(List.of("France", "Spain", "Australia", "Austria"), list.stream().map(Country::getName).toList());
+                        }, () -> {
+                            var list = repository.findAllWithNameLike("Aus%");
+                            assertEquals(List.of("Australia", "Austria"), list.stream().map(Country::getName).toList());
+                        }, () -> {
+                            var country = repository.findByName("Spain").orElseThrow();
+                            assertEquals("Spain", country.name);
+                        }, () -> {
+                            var country = repository.findByName("France").orElseThrow();
+                            var country2 = repository.findById(country.id).orElseThrow();
+                            assertEquals(country2, country);
+                        });
+            });
+        }
+
+    }
 }

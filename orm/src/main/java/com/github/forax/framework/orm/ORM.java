@@ -2,6 +2,7 @@ package com.github.forax.framework.orm;
 
 import javax.sql.DataSource;
 import java.beans.BeanInfo;
+import java.beans.Introspector;
 import java.beans.PropertyDescriptor;
 import java.io.Serial;
 import java.lang.reflect.Constructor;
@@ -151,7 +152,6 @@ public final class ORM {
     static void createTable(Class<?> beanClass) throws SQLException {
         Objects.requireNonNull(beanClass);
         var tableName = findTableName(beanClass);
-        // get columns
         var beanInfo = Utils.beanInfo(beanClass);
         var update = "CREATE TABLE " + tableName + " " +
                 Arrays
@@ -187,7 +187,6 @@ public final class ORM {
         Objects.requireNonNull(beanInfo);
         var propertyIds = Arrays.stream(beanInfo.getPropertyDescriptors())
                 .filter(ORM::isAnnotatedId)
-//                .filter(property -> property.getReadMethod().isAnnotationPresent(Id.class))
                 .toList();
         return switch (propertyIds.size()) {
             case 0 -> null;
@@ -200,7 +199,6 @@ public final class ORM {
         Objects.requireNonNull(connection);
         Objects.requireNonNull(tableName);
         Objects.requireNonNull(beanInfo);
-//        Objects.requireNonNull(idProperty);
 
         var saveQuery = createSaveQuery(tableName, beanInfo);
         int columnIndex = 1;
@@ -244,15 +242,31 @@ public final class ORM {
                         new Class<?>[]{repositoryClass},
                         (Object proxy, Method method, Object[] args) -> {
                             try {
-                                return switch (method.getName()) {
+                                var methodName = method.getName();
+                                return switch (methodName) {
                                     case "save" ->
                                             save(currentConnection(), tableName, beanInfo, args[0], findId(beanInfo));
                                     case "findAll" -> findAll(currentConnection(), sqlQuery, beanInfo, constructor);
                                     case "findById" ->
-                                            findAll(currentConnection(), sqlQuery + " WHERE " + findColumnName(findId(beanInfo)) + " = ?", beanInfo, constructor, args[0]).stream().findFirst();
+                                            findByProperty(currentConnection(), tableName, beanInfo, constructor, findId(beanInfo), args[0]).stream().findFirst();
                                     case "hashCode", "equals", "toString" ->
                                             throw new UnsupportedOperationException("Method: " + method + " not supported");
-                                    default -> throw new IllegalStateException("Method: " + method + " not supported");
+                                    default -> {
+                                        var query = method.getAnnotation(Query.class);
+                                        if (query != null) {
+                                            var arguments = args == null ? new String[0] : args; // the array should be non mutable
+                                            yield findAll(currentConnection(), query.value(), beanInfo, constructor, arguments);
+                                        }
+                                        if (methodName.startsWith("findBy")) {
+                                            var propertyName = Introspector.decapitalize(methodName.substring("findBy".length()));
+                                            var property = findProperty(beanInfo, propertyName);
+                                            var list = findByProperty(currentConnection(), tableName, beanInfo, constructor, property, args[0]);
+                                            yield method.getReturnType() == Optional.class
+                                                    ? list.stream().findFirst()
+                                                    : list;
+                                        }
+                                        throw new IllegalStateException("Method: " + method + " not supported");
+                                    }
                                 };
                             } catch (SQLException e) {
                                 throw new UncheckedSQLException(e);
@@ -303,4 +317,27 @@ public final class ORM {
         }
         return list;
     }
+
+    static List<?> findByProperty(Connection connection, String tableName, BeanInfo beanInfo, Constructor<?> constructor, PropertyDescriptor property, Object... args) throws SQLException {
+        return findAll(connection,
+                "SELECT * FROM " + tableName + " WHERE " + findColumnName(property) + " = ?"
+                ,
+                beanInfo,
+                constructor,
+                args[0]);
+    }
+
+    static PropertyDescriptor findProperty(BeanInfo beanInfo, String propertyName) {
+        Objects.requireNonNull(beanInfo);
+        Objects.requireNonNull(propertyName);
+        if (propertyName.equals("class")) {
+            return null;
+        }
+
+        var propertiyFind =
+                Arrays.stream(beanInfo.getPropertyDescriptors())
+                        .filter(property -> property.getName().equals(propertyName)).findFirst();
+        return propertiyFind.orElseThrow(() -> new IllegalStateException("No property " + propertyName + " found"));
+    }
+
 }
