@@ -168,7 +168,7 @@ public final class ORM {
     public static String createSaveQuery(String tableName, BeanInfo beanInfo) {
         var properties = beanInfo.getPropertyDescriptors();
         return """
-                INSERT INTO %s %s VALUES (%s);"""
+                MERGE INTO %s %s VALUES (%s);"""
                 .formatted(
                         tableName,
                         Arrays

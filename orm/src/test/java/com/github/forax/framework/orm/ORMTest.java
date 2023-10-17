@@ -905,91 +905,100 @@ public class ORMTest {
         }
     }
 
-/*
-  @Nested
-  class Q9 {
+    @Nested
+    class Q9 {
 
-    @Test @Tag("Q9")
-    public void testSaveReturnValue() throws SQLException {
-      interface DataRepository extends Repository<Data, String> {}
+        @Test
+        @Tag("Q9")
+        public void testSaveReturnValue() throws SQLException {
+            interface DataRepository extends Repository<Data, String> {
+            }
 
-      var dataSource = new JdbcDataSource();
-      dataSource.setURL("jdbc:h2:mem:test");
-      var repository = ORM.createRepository(DataRepository.class);
-      ORM.transaction(dataSource, () -> {
-        ORM.createTable(Data.class);
-        var data1 = repository.save(new Data());
-        assertEquals("1", data1.id);
-        var data2 = repository.save(new Data());
-        assertEquals("2", data2.id);
-      });
-    }
-  }
-
-
-  @SuppressWarnings("unused")
-  static final class Account {
-    private Integer id;
-    private long balance;
-
-    public Account() {}
-    public Account(Integer id, long balance) {
-      this.id = id;
-      this.balance = balance;
+            var dataSource = new JdbcDataSource();
+            dataSource.setURL("jdbc:h2:mem:test");
+            var repository = ORM.createRepository(DataRepository.class);
+            ORM.transaction(dataSource, () -> {
+                ORM.createTable(Data.class);
+                var data1 = repository.save(new Data());
+                assertEquals("1", data1.id);
+                var data2 = repository.save(new Data());
+                assertEquals("2", data2.id);
+            });
+        }
     }
 
-    @Id
-    public Integer getId() {
-      return id;
-    }
-    public void setId(Integer id) {
-      this.id = id;
-    }
 
-    public long getBalance() {
-      return balance;
-    }
-    public void setBalance(long balance) {
-      this.balance = balance;
-    }
+    @SuppressWarnings("unused")
+    static final class Account {
+        private Integer id;
+        private long balance;
 
-    @Override
-    public boolean equals(Object o) {
-      return o instanceof Account account && Objects.equals(id, account.id) && balance == account.balance;
-    }
-    @Override
-    public int hashCode() {
-      return Objects.hash(id, balance);
-    }
+        public Account() {
+        }
 
-    @Override
-    public String toString() {
-      return "Account { id=" + id + ", balance=" + balance + '}';
-    }
-  }
+        public Account(Integer id, long balance) {
+            this.id = id;
+            this.balance = balance;
+        }
 
-  @Nested
-  class Q10 {
+        @Id
+        public Integer getId() {
+            return id;
+        }
 
-    @Test @Tag("Q10")
-    public void testMergeValues() throws SQLException {
-      interface AccountRepository extends Repository<Account, String> {}
+        public void setId(Integer id) {
+            this.id = id;
+        }
 
-      var dataSource = new JdbcDataSource();
-      dataSource.setURL("jdbc:h2:mem:test");
-      var repository = ORM.createRepository(AccountRepository.class);
-      ORM.transaction(dataSource, () -> {
-        ORM.createTable(Account.class);
-        repository.save(new Account(1, 867));
-        repository.save(new Account(10, -687));
-        repository.save(new Account(10, 501));
-        var list = repository.findAll();
-        assertEquals(List.of(new Account(1, 867), new Account(10, 501)), list);
-      });
+        public long getBalance() {
+            return balance;
+        }
+
+        public void setBalance(long balance) {
+            this.balance = balance;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            return o instanceof Account account && Objects.equals(id, account.id) && balance == account.balance;
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(id, balance);
+        }
+
+        @Override
+        public String toString() {
+            return "Account { id=" + id + ", balance=" + balance + '}';
+        }
     }
 
-  }
 
+    @Nested
+    class Q10 {
+
+        @Test
+        @Tag("Q10")
+        public void testMergeValues() throws SQLException {
+            interface AccountRepository extends Repository<Account, String> {
+            }
+
+            var dataSource = new JdbcDataSource();
+            dataSource.setURL("jdbc:h2:mem:test");
+            var repository = ORM.createRepository(AccountRepository.class);
+            ORM.transaction(dataSource, () -> {
+                ORM.createTable(Account.class);
+                repository.save(new Account(1, 867));
+                repository.save(new Account(10, -687));
+                repository.save(new Account(10, 501));
+                var list = repository.findAll();
+                assertEquals(List.of(new Account(1, 867), new Account(10, 501)), list);
+            });
+        }
+
+    }
+  /*
   @SuppressWarnings("unused")
   static final class Pet {
     private Long id;
