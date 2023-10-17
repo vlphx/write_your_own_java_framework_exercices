@@ -998,124 +998,139 @@ public class ORMTest {
         }
 
     }
-  /*
-  @SuppressWarnings("unused")
-  static final class Pet {
-    private Long id;
-    private String name;
-    private int age;
 
-    public Pet() {}
-    public Pet(Long id, String name, int age) {
-      this.id = id;
-      this.name = name;
-      this.age = age;
+    @SuppressWarnings("unused")
+    static final class Pet {
+        private Long id;
+        private String name;
+        private int age;
+
+        public Pet() {
+        }
+
+        public Pet(Long id, String name, int age) {
+            this.id = id;
+            this.name = name;
+            this.age = age;
+        }
+
+        @Id
+        public Long getId() {
+            return id;
+        }
+
+        public void setId(Long id) {
+            this.id = id;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(String name) {
+            this.name = name;
+        }
+
+        public int getAge() {
+            return age;
+        }
+
+        public void setAge(int age) {
+            this.age = age;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            return o instanceof Pet pet &&
+                    Objects.equals(id, pet.id) &&
+                    Objects.equals(name, pet.name) &&
+                    age == pet.age;
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(id, name, age);
+        }
+
+        @Override
+        public String toString() {
+            return "Pet { id=" + id + ", name='" + name + "', age=" + age + '}';
+        }
     }
 
-    @Id
-    public Long getId() {
-      return id;
-    }
-    public void setId(Long id) {
-      this.id = id;
-    }
+    @Nested
+    public class Q11 {
+        public static final class NoId {
+        }
 
-    public String getName() {
-      return name;
-    }
-    public void setName(String name) {
-      this.name = name;
-    }
+        @Test
+        @Tag("Q11")
+        public void testFindId() {
+            var beanInfo = Utils.beanInfo(Person.class);
+            var property = ORM.findId(beanInfo);
+            assertEquals("id", property.getName());
+        }
 
-    public int getAge() {
-      return age;
-    }
-    public void setAge(int age) {
-      this.age = age;
-    }
+        @Test
+        @Tag("Q11")
+        public void testFindById() throws SQLException {
+            interface PersonRepository extends Repository<Person, Long> {
+            }
 
-    @Override
-    public boolean equals(Object o) {
-      return o instanceof Pet pet &&
-          Objects.equals(id, pet.id) &&
-          Objects.equals(name, pet.name) &&
-          age == pet.age;
-    }
-    @Override
-    public int hashCode() {
-      return Objects.hash(id, name, age);
-    }
+            var dataSource = new JdbcDataSource();
+            dataSource.setURL("jdbc:h2:mem:test");
+            var repository = ORM.createRepository(PersonRepository.class);
+            ORM.transaction(dataSource, () -> {
+                ORM.createTable(Person.class);
+                repository.save(new Person(1L, "iga"));
+                repository.save(new Person(2L, "biva"));
+                var person = repository.findById(2L).orElseThrow();
+                assertEquals(new Person(2L, "biva"), person);
+            });
+        }
 
-    @Override
-    public String toString() {
-      return "Pet { id=" + id + ", name='" + name + "', age=" + age + '}';
-    }
-  }
+        @Test
+        @Tag("Q11")
+        public void testFindByIdNotFound() throws SQLException {
+            interface PersonRepository extends Repository<Person, Long> {
+            }
 
-  @Nested
-  public class Q11 {
-    public static final class NoId { }
+            var dataSource = new JdbcDataSource();
+            dataSource.setURL("jdbc:h2:mem:test");
+            var repository = ORM.createRepository(PersonRepository.class);
+            ORM.transaction(dataSource, () -> {
+                ORM.createTable(Person.class);
+                repository.save(new Person(1L, "iga"));
+                repository.save(new Person(2L, "biva"));
+                var person = repository.findById(888L);
+                assertTrue(person.isEmpty());
+            });
+        }
 
-    @Test @Tag("Q11")
-    public void testFindId() {
-      var beanInfo = Utils.beanInfo(Person.class);
-      var property = ORM.findId(beanInfo);
-      assertEquals("id", property.getName());
-    }
+        @Test
+        @Tag("Q11")
+        public void testFindNoId() {
+            var beanInfo = Utils.beanInfo(NoId.class);
+            assertNull(ORM.findId(beanInfo));
+        }
 
-    @Test @Tag("Q11")
-    public void testFindById() throws SQLException {
-      interface PersonRepository extends Repository<Person, Long> {}
+        @Test
+        @Tag("Q11")
+        public void testRepositoryClassWithNoPrimaryKey() throws SQLException {
+            interface VoidRepository extends Repository<NoId, Void> {
+            }
 
-      var dataSource = new JdbcDataSource();
-      dataSource.setURL("jdbc:h2:mem:test");
-      var repository = ORM.createRepository(PersonRepository.class);
-      ORM.transaction(dataSource, () -> {
-        ORM.createTable(Person.class);
-        repository.save(new Person(1L, "iga"));
-        repository.save(new Person(2L, "biva"));
-        var person = repository.findById(2L).orElseThrow();
-        assertEquals(new Person(2L, "biva"), person);
-      });
-    }
-
-    @Test @Tag("Q11")
-    public void testFindByIdNotFound() throws SQLException {
-      interface PersonRepository extends Repository<Person, Long> {}
-
-      var dataSource = new JdbcDataSource();
-      dataSource.setURL("jdbc:h2:mem:test");
-      var repository = ORM.createRepository(PersonRepository.class);
-      ORM.transaction(dataSource, () -> {
-        ORM.createTable(Person.class);
-        repository.save(new Person(1L, "iga"));
-        repository.save(new Person(2L, "biva"));
-        var person = repository.findById(888L);
-        assertTrue(person.isEmpty());
-      });
+            var dataSource = new JdbcDataSource();
+            dataSource.setURL("jdbc:h2:mem:test");
+            var repository = ORM.createRepository(VoidRepository.class);
+            ORM.transaction(dataSource, () -> {
+                ORM.createTable(NoId.class);
+                assertEquals(List.of(), repository.findAll());
+            });
+        }
     }
 
-    @Test @Tag("Q11")
-    public void testFindNoId() {
-      var beanInfo = Utils.beanInfo(NoId.class);
-      assertNull(ORM.findId(beanInfo));
-    }
-
-    @Test @Tag("Q11")
-    public void testRepositoryClassWithNoPrimaryKey() throws SQLException {
-      interface VoidRepository extends Repository<NoId, Void> { }
-
-      var dataSource = new JdbcDataSource();
-      dataSource.setURL("jdbc:h2:mem:test");
-      var repository = ORM.createRepository(VoidRepository.class);
-      ORM.transaction(dataSource, () -> {
-        ORM.createTable(NoId.class);
-        assertEquals(List.of(), repository.findAll());
-      });
-    }
-  }
-
-
+/*
   @Nested
   public class Q12 {
 

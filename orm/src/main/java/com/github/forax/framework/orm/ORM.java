@@ -187,9 +187,10 @@ public final class ORM {
         Objects.requireNonNull(beanInfo);
         var propertyIds = Arrays.stream(beanInfo.getPropertyDescriptors())
                 .filter(ORM::isAnnotatedId)
+//                .filter(property -> property.getReadMethod().isAnnotationPresent(Id.class))
                 .toList();
         return switch (propertyIds.size()) {
-            case 0 -> throw new IllegalStateException(" no @Id defined on any getters");
+            case 0 -> null;
             case 1 -> propertyIds.getFirst();
             default -> throw new IllegalStateException(" too many @Id defined on getters");
         };
@@ -236,7 +237,7 @@ public final class ORM {
         var beanInfo = Utils.beanInfo(beanType);
         var sqlQuery = "SELECT * FROM " + tableName;
         var constructor = Utils.defaultConstructor(beanType);
-        var idProperty = findId(beanInfo);
+
         return repositoryClass.cast(
                 Proxy.newProxyInstance(
                         repositoryClass.getClassLoader(),
@@ -244,8 +245,11 @@ public final class ORM {
                         (Object proxy, Method method, Object[] args) -> {
                             try {
                                 return switch (method.getName()) {
-                                    case "save" -> save(currentConnection(), tableName, beanInfo, args[0], idProperty);
+                                    case "save" ->
+                                            save(currentConnection(), tableName, beanInfo, args[0], findId(beanInfo));
                                     case "findAll" -> findAll(currentConnection(), sqlQuery, beanInfo, constructor);
+                                    case "findById" ->
+                                            findAll(currentConnection(), sqlQuery + " WHERE " + findColumnName(findId(beanInfo)) + " = ?", beanInfo, constructor, args[0]).stream().findFirst();
                                     case "hashCode", "equals", "toString" ->
                                             throw new UnsupportedOperationException("Method: " + method + " not supported");
                                     default -> throw new IllegalStateException("Method: " + method + " not supported");
@@ -278,7 +282,7 @@ public final class ORM {
         return newInstance;
     }
 
-    public static <T> List<T> findAll(Connection connection, String sqlQuery, BeanInfo beanInfo, Constructor<? extends T> constructor) throws SQLException {
+    public static <T> List<T> findAll(Connection connection, String sqlQuery, BeanInfo beanInfo, Constructor<? extends T> constructor, Object... args) throws SQLException {
         Objects.requireNonNull(connection);
         Objects.requireNonNull(sqlQuery);
         Objects.requireNonNull(beanInfo);
@@ -286,6 +290,10 @@ public final class ORM {
 
         var list = new ArrayList<T>();
         try (PreparedStatement statement = connection.prepareStatement(sqlQuery)) {
+            for (var i = 0; i < args.length; i++) {
+                var arg = args[i];
+                statement.setObject(i + 1, arg);
+            }
             try (ResultSet resultSet = statement.executeQuery()) {
                 while (resultSet.next()) {
                     var instance = toEntityClass(resultSet, beanInfo, constructor);
