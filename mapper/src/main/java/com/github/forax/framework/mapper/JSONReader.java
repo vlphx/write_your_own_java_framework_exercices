@@ -2,16 +2,19 @@ package com.github.forax.framework.mapper;
 
 import java.beans.PropertyDescriptor;
 import java.lang.reflect.Constructor;
+import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
-import java.util.ArrayDeque;
-import java.util.Arrays;
-import java.util.Map;
-import java.util.Objects;
+import java.util.*;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
+import java.util.stream.Stream;
 
 public class JSONReader {
+    public interface TypeReference<T> {
+    }
+
     private record BeanData(Constructor<?> constructor, Map<String, PropertyDescriptor> propertyMap) {
         PropertyDescriptor findProperty(String key) {
             var property = propertyMap.get(key);
@@ -57,21 +60,98 @@ public class JSONReader {
                     Function.identity()
             );
         }
+
+        public static ObjectBuilder<List<Object>> list(Type componentType) {
+            Objects.requireNonNull(componentType);
+            return new ObjectBuilder<List<Object>>(
+                    key -> componentType,
+                    ArrayList::new,
+                    (instance, key, value) -> instance.add(value),
+                    List::copyOf
+            );
+        }
+
+        // Idée: Créer un tableau d'objet, remplir le tableau d'objet avec les valeurs représentant les champs du record, et à la fin créer le record
+        public static ObjectBuilder<Object[]> record(Class<?> recordClass) {
+            var components = recordClass.getRecordComponents();
+            var map =
+                    IntStream.range(0, components.length)
+                            .boxed() // to get a int stream
+                            .collect(Collectors.toMap(i -> components[i].getName(), Function.identity()));
+            var recordConstructor = Utils.canonicalConstructor(recordClass, components);
+            return new ObjectBuilder<Object[]>(
+                    key -> components[map.get(key)].getGenericType(),
+                    () -> new Object[components.length],
+                    (array, key, value) -> array[map.get(key)] = value,
+                    array -> Utils.newInstance(recordConstructor, array)
+            );
+        }
     }
 
 
-    private record Context(ObjectBuilder<Object> objectBuilder, Object result) {
+    @FunctionalInterface
+    public interface TypeMatcher {
+        Optional<ObjectBuilder<?>> match(Type type);
     }
 
-    public <T> T parseJSON(String text, Class<T> beanClass) {
-        return beanClass.cast(parseJSON(text, (Type) beanClass));
+    private final ArrayList<TypeMatcher> typeMatchers = new ArrayList<>();
+
+    public void addTypeMatcher(TypeMatcher typeMatcher) {
+        Objects.requireNonNull(typeMatcher);
+        typeMatchers.add(typeMatcher);
+    }
+
+    private ObjectBuilder<?> findObjectBuilder(Type type) {
+        return typeMatchers.reversed()
+                .stream()
+                .flatMap(typeMatcher -> typeMatcher.match(type).stream())
+//             .filter( typeMatcher -> typeMatcher.match(type).isPresent())
+//             .map( typeMatcher -> typeMatcher.match(type).orElseThrow())
+                .findFirst()
+                .orElseGet(() -> ObjectBuilder.bean(Utils.erase(type)));
+    }
+
+    private record Context<T>(ObjectBuilder<T> objectBuilder, T result) {
+
+        static <T> Context<T> createContext(ObjectBuilder<T> objectBuilder) {
+            var instance = objectBuilder.supplier.get();
+            return new Context<>(objectBuilder, instance);
+        }
+
+        void populate(String key, Object value) {
+            objectBuilder.populater.populate(result, key, value);
+        }
+
+        Object finish() {
+            return objectBuilder.finisher.apply(result);
+        }
+    }
+
+    public <T> T parseJSON(String text, Class<T> expectedClass) {
+        return expectedClass.cast(parseJSON(text, (Type) expectedClass));
+    }
+
+    public <T> T parseJSON(String text, TypeReference<T> typeReference) {
+        var type = giveMeTheTypeRef(typeReference);
+        @SuppressWarnings("unchecked")
+        var parsedObject = (T) parseJSON(text, type);
+        return parsedObject;
+    }
+
+    private <T> Type giveMeTheTypeRef(TypeReference<T> typeReference) {
+        var typeReferenceType = Arrays.stream(typeReference.getClass().getGenericInterfaces())
+                .flatMap(t -> t instanceof ParameterizedType parameterizedType ? Stream.of(parameterizedType) : null)
+                .filter(t -> t.getRawType() == TypeReference.class)
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("TypeReference is " + typeReference));
+        return typeReferenceType.getActualTypeArguments()[0];
     }
 
     public Object parseJSON(String text, Type expectedType) {
         Objects.requireNonNull(text);
         Objects.requireNonNull(expectedType);
 
-        var stack = new ArrayDeque<Context>(); // anonymous class below can capture this variable (all local variables by the way)
+        var stack = new ArrayDeque<Context<?>>(); // anonymous class below can capture this variable (all local variables by the way)
         var visitor = new ToyJSONParser.JSONVisitor() {
             private BeanData beanData;
             private Object result;
@@ -81,47 +161,39 @@ public class JSONReader {
                 var currentContext = stack.peek();
 //                var setter = Objects.requireNonNull(currentContext).beanData.findProperty(key).getWriteMethod();
 //                Utils.invokeMethod(currentContext.result, setter, value);
-                currentContext.objectBuilder.populater.populate(currentContext.result, key, value);
+                assert currentContext != null;
+                currentContext.populate(key, value);
             }
 
             @Override
             public void startObject(String key) {
                 var currentContext = stack.peek();
-                var beanType = currentContext == null ?
+                var type = currentContext == null ?
                         expectedType : currentContext.objectBuilder.typeProvider.apply(key);
-                var objectBuilder = ObjectBuilder.bean(Utils.erase(beanType));
-                var instance = objectBuilder.supplier.get();
-
-//                beanData = BEAN_DATA_CLASS_VALUE.get(beanType);
-                //get the beanData and store it in the field
-                //create an instance and store it in result
-//                var instance = Utils.newInstance(beanData.constructor);
-                stack.push(new Context(objectBuilder, instance));
+                var objectBuilder = findObjectBuilder(type);
+                stack.push(Context.createContext(objectBuilder));
             }
 
             @Override
             public void endObject(String key) {
                 var previoustContext = stack.pop();
-                var result = previoustContext.result;
+                var result = previoustContext.finish();
                 if (stack.isEmpty())
                     this.result = result;
                 else {
                     var currentContext = stack.peek();
-//                    var setter = currentContext.objectBuilder.finisher.apply(currentContext.result);
-//                            .beanData.findProperty(key).getWriteMethod();
-//                    Utils.invokeMethod(currentContext.result, setter, result);
-                    currentContext.objectBuilder.populater.populate(currentContext.result, key, result);
+                    currentContext.populate(key, result);
                 }
             }
 
             @Override
             public void startArray(String key) {
-                throw new UnsupportedOperationException("Implemented later");
+                startObject(key);
             }
 
             @Override
             public void endArray(String key) {
-                throw new UnsupportedOperationException("Implemented later");
+                endObject(key);
             }
         };
         ToyJSONParser.parse(text, visitor);
